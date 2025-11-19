@@ -5,7 +5,7 @@ import {
   Cell, PieChart, Pie, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, BarChart, ReferenceLine
 } from 'recharts';
 import { Transaction, Entity, ExchangeRates, TransactionCategory, Currency } from '../types';
-import { ShieldCheck, Activity, PieChart as PieIcon, ArrowUpRight, ArrowDownLeft, Layers, Landmark, BarChart2 } from 'lucide-react';
+import { ShieldCheck, Activity, PieChart as PieIcon, ArrowUpRight, ArrowDownLeft, Layers, Landmark, Timer, TrendingDown } from 'lucide-react';
 
 interface DashboardProps {
   transactions: Transaction[];
@@ -58,7 +58,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
             }
         }
 
-        // Balance Update (Must process all to keep state correct, but select output based on filter)
+        // Balance Update
         balances[t.entity].HKD += t.amountHKD;
         balances[t.entity].RMB += t.amountRMB;
         balances[t.entity].USD += t.amountUSD;
@@ -70,7 +70,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
         dataMap[month].entBalance = parseFloat(entTotal.toFixed(2));
         dataMap[month].totalBalance = parseFloat((propTotal + entTotal).toFixed(2));
 
-        // Determine which balance line to show
         if (chartFilter === 'ALL') dataMap[month].filteredBalance = dataMap[month].totalBalance;
         else if (chartFilter === Entity.PROPERTY) dataMap[month].filteredBalance = dataMap[month].propBalance;
         else dataMap[month].filteredBalance = dataMap[month].entBalance;
@@ -81,32 +80,36 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
   // STRICT 18-MONTH FILTER
   const displayChartData = useMemo(() => {
       const today = new Date();
-      const startStr = today.toISOString().substring(0, 7); // YYYY-MM
-      
+      const startStr = today.toISOString().substring(0, 7); 
       const endDate = new Date(today);
       endDate.setMonth(today.getMonth() + 18);
       const endStr = endDate.toISOString().substring(0, 7);
-
       return chartData.filter(d => d.month >= startStr && d.month <= endStr);
   }, [chartData]);
 
 
   // --- KPI Calculations ---
-  const currentMonth = displayChartData[0]; // Use start of display period
+  const currentMonth = displayChartData[0];
   const currentBalance = currentMonth?.filteredBalance || 0;
-  // Calculate actual current balance based on latest known data (last processed)
   const latestKnownData = chartData[chartData.length - 1];
   const latestBalance = latestKnownData?.filteredBalance || 0;
 
-  // Safety Threshold logic
+  // Safety Threshold
   const safetyThreshold = useMemo(() => convertToBase(0, 100, 0), [baseCurrency, rates]);
-  
   const netFlow = currentMonth?.net || 0;
+
+  // Runway Calculation (Months until balance < 0 if avg burn persists)
+  const runway = useMemo(() => {
+      const burnMonths = displayChartData.filter(d => d.net < 0);
+      if (burnMonths.length === 0) return 999; // Infinite runway
+      const avgBurn = burnMonths.reduce((acc, curr) => acc + Math.abs(curr.net), 0) / burnMonths.length;
+      if (avgBurn === 0) return 999;
+      return currentBalance / avgBurn;
+  }, [displayChartData, currentBalance]);
 
   // FX Data (Total Exposure)
   const fxData = useMemo(() => {
     const finalBal = { HKD: 0, RMB: 0, USD: 0 };
-    // Filter logic for Pie Chart
     const relevantStart = chartFilter === 'ALL' ? [startBalances[Entity.PROPERTY], startBalances[Entity.ENTERPRISE]] : [startBalances[chartFilter as Entity]];
     
     relevantStart.forEach(b => { finalBal.HKD += b.HKD; finalBal.RMB += b.RMB; finalBal.USD += b.USD; });
@@ -139,32 +142,40 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
       return Object.entries(quarterMap).map(([name, d]) => ({ name, ...d })).sort((a, b) => a.name.localeCompare(b.name));
   }, [transactions, rates, baseCurrency, chartFilter]);
 
-  // Radar Data (Health Score)
+  // Smart Score Logic
+  const healthScore = useMemo(() => {
+      let score = 100;
+      if (latestBalance < safetyThreshold) score -= 30;
+      if (netFlow < 0) score -= 10;
+      if (runway < 6) score -= 20;
+      return Math.max(0, score);
+  }, [latestBalance, safetyThreshold, netFlow, runway]);
+
   const radarData = [
-    { subject: '流动性', A: latestBalance > safetyThreshold ? 90 : 60, fullMark: 100 },
-    { subject: '偿债力', A: 80, fullMark: 100 },
-    { subject: '融资空间', A: 70, fullMark: 100 },
+    { subject: '流动性 (Liquidity)', A: runway > 12 ? 95 : runway > 6 ? 70 : 40, fullMark: 100 },
+    { subject: '偿债覆盖 (DSCR)', A: 80, fullMark: 100 },
+    { subject: '融资弹性', A: 70, fullMark: 100 },
     { subject: '汇率对冲', A: 50, fullMark: 100 },
-    { subject: '运营效率', A: 85, fullMark: 100 },
+    { subject: '运营效率', A: netFlow > 0 ? 90 : 60, fullMark: 100 },
   ];
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-8">
       
-      {/* --- Row 1: Sparkline KPIs --- */}
+      {/* --- Row 1: KPI Cards --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <SparklineCard 
-            title={chartFilter === 'ALL' ? '集团总资金余额 (预测期末)' : `${chartFilter}资金余额`}
+            title={chartFilter === 'ALL' ? '集团总资金余额' : `${chartFilter}资金余额`}
             value={latestBalance} 
             unit={`亿 ${baseCurrency}`} 
             data={displayChartData} 
             dataKey="filteredBalance" 
             color="#4f46e5" 
             trend={latestBalance > safetyThreshold ? 'up' : 'down'}
-            subText={`安全阈值: ${safetyThreshold.toFixed(0)}`}
+            subText={`警戒线: ${safetyThreshold.toFixed(0)}`}
           />
           <SparklineCard 
-            title="本月净流量" 
+            title="本月净流量 (Net Flow)" 
             value={netFlow} 
             unit="亿" 
             data={displayChartData} 
@@ -174,40 +185,34 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
             trend={netFlow > 0 ? 'up' : 'down'}
             subText={netFlow > 0 ? "资金净流入" : "资金净流出"}
           />
-           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden group flex flex-col justify-between">
-                <div className="flex justify-between items-start mb-2">
-                    <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">资产币种结构</h3>
-                    <PieIcon size={16} className="text-slate-300"/>
-                </div>
-                <div className="flex items-center justify-between h-full">
-                     <div className="h-20 w-20 relative flex-shrink-0">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie data={fxData} innerRadius={20} outerRadius={32} dataKey="value" strokeWidth={2} stroke="#fff">
-                                    {fxData.map((entry, index) => <Cell key={index} fill={entry.color}/>)}
-                                </Pie>
-                            </PieChart>
-                        </ResponsiveContainer>
+          
+          {/* New: Runway Card */}
+           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden group hover:shadow-md hover:border-amber-200 transition-all">
+                <div className="flex justify-between items-start mb-4 relative z-10">
+                     <div>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">资金跑道 (Runway)</p>
+                        <h3 className="text-2xl font-bold text-slate-800 mt-2 tracking-tight">
+                            {runway > 24 ? '> 24' : runway.toFixed(1)} <span className="text-xs font-normal text-slate-400">个月</span>
+                        </h3>
                      </div>
-                     <div className="flex-1 ml-4 space-y-1.5">
-                        {fxData.map(d => (
-                            <div key={d.name} className="flex justify-between text-xs border-b border-slate-50 pb-1 last:border-0">
-                                <span className="text-slate-500 flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full" style={{background: d.color}}></span> {d.name}
-                                </span>
-                                <span className="font-bold text-slate-700">{d.value.toFixed(0)}</span>
-                            </div>
-                        ))}
+                     <div className={`p-2 rounded-xl ${runway < 6 ? 'bg-rose-100 text-rose-600' : 'bg-amber-50 text-amber-500'}`}>
+                         <Timer size={20}/>
                      </div>
                 </div>
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden relative z-10">
+                    <div className={`h-full rounded-full transition-all duration-1000 ${runway < 6 ? 'bg-rose-500' : 'bg-amber-400'}`} style={{width: `${Math.min(runway * 5, 100)}%`}}></div>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-2 relative z-10">按当前平均消耗速度计算</p>
            </div>
+
+           {/* Health Score */}
            <div className="bg-gradient-to-br from-slate-800 to-slate-950 p-6 rounded-2xl shadow-lg text-white flex flex-col justify-between relative overflow-hidden ring-1 ring-black/10">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500 rounded-full blur-3xl opacity-20 -mr-10 -mt-10"></div>
                 <div className="relative z-10">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">集团综合评分</p>
-                    <h3 className="text-3xl font-bold mt-1 tracking-tight">86.5 <span className="text-sm font-normal text-slate-500">/ 100</span></h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">集团综合健康分</p>
+                    <h3 className="text-3xl font-bold mt-1 tracking-tight">{healthScore.toFixed(1)} <span className="text-sm font-normal text-slate-500">/ 100</span></h3>
                 </div>
-                <div className="h-20 mt-2 relative z-10 opacity-90">
+                <div className="h-24 -mb-4 relative z-10 opacity-90">
                     <ResponsiveContainer width="100%" height="100%">
                         <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
                             <PolarGrid stroke="#334155" />
@@ -227,8 +232,8 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
                 <div className="flex items-center gap-3">
                     <div className="p-2.5 bg-indigo-50 rounded-xl text-indigo-600 ring-1 ring-indigo-100"><Activity size={20}/></div>
                     <div>
-                        <h3 className="font-bold text-slate-800 text-lg">流动性趋势预测</h3>
-                        <p className="text-xs text-slate-400 font-medium">未来18个月资金池水位变化 (Liquidity Forecast)</p>
+                        <h3 className="font-bold text-slate-800 text-lg">流动性趋势预测 (Liquidity Forecast)</h3>
+                        <p className="text-xs text-slate-400 font-medium">未来18个月资金池水位变化</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -265,9 +270,8 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
                             strokeWidth={3} 
                             fill="url(#colorTotal)" 
                             activeDot={{r:6, strokeWidth:0, fill: '#4f46e5'}} 
-                            animationDuration={1500}
+                            animationDuration={1000}
                         />
-                        {/* Using Bar for Net Flow overlay */}
                         <Bar dataKey="net" name="净流量" barSize={4} fill="#cbd5e1" radius={[2,2,0,0]} />
                     </AreaChart>
                 </ResponsiveContainer>
@@ -286,7 +290,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
                 </div>
                 {onOpenDebtModal && (
                      <button onClick={onOpenDebtModal} className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2 py-1 rounded hover:bg-rose-100 transition-colors flex items-center gap-1">
-                        <Landmark size={12}/> 管理债务
+                        <Landmark size={12}/> 管理
                      </button>
                 )}
              </div>
