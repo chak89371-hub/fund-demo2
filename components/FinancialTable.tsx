@@ -53,7 +53,6 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
 
   // Data Processing & Grouping
   const { groupedData, initialBalanceBase } = useMemo(() => {
-      // 1. Filter by Entity & Search Term
       let processed = [...transactions].filter(t => {
           const matchEntity = entityFilter === 'ALL' || t.entity === entityFilter;
           const matchSearch = searchTerm === '' || 
@@ -63,7 +62,6 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
           return matchEntity && matchSearch;
       });
       
-      // Determine Initial Balance based on Filter
       let startBase = 0;
       if (entityFilter === 'ALL') {
           Object.values(startBalances).forEach(b => {
@@ -76,7 +74,6 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
 
       processed.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-      // 2. Calculate Running Balance & Group by Month
       const groups: Record<string, { month: string, trans: (Transaction & { runningBal: number, totalBase: number })[], monthEndBal: number, netFlow: number }> = {};
       let currentRunningBal = startBase;
 
@@ -108,12 +105,12 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full animate-in fade-in duration-500">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">
       {/* Toolbar */}
       <div className="px-6 py-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
          <div className="flex items-center gap-2 text-slate-500">
              <Filter size={16} />
-             <span className="text-xs font-bold uppercase">明细筛选</span>
+             <span className="text-xs font-bold uppercase tracking-wide">筛选与搜索</span>
          </div>
          <div className="relative group w-full sm:w-64">
              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors"/>
@@ -143,10 +140,10 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
               <th className="px-4 py-3 text-center w-16"></th>
             </tr>
           </thead>
-          <tbody className="bg-white">
+          <tbody className="bg-white divide-y divide-slate-50">
             {/* Initial Balance Row */}
             <tr className="bg-slate-50/50 border-b border-slate-200">
-                <td colSpan={8} className="px-6 py-2 text-right text-xs font-bold text-slate-400 uppercase">期初资金余额</td>
+                <td colSpan={8} className="px-6 py-2 text-right text-xs font-bold text-slate-400 uppercase">期初资金余额 (Opening Balance)</td>
                 <td className="px-6 py-2 text-right text-xs font-bold font-mono text-slate-700 bg-indigo-50/30">{formatNumber(initialBalanceBase)}</td>
                 <td></td>
             </tr>
@@ -166,8 +163,8 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
                 return (
                     <React.Fragment key={month}>
                         {/* Month Header */}
-                        <tr className="bg-slate-100 border-y border-slate-200 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => toggleMonth(month)}>
-                            <td colSpan={10} className="px-4 py-1.5">
+                        <tr className="bg-slate-100 border-y border-slate-200 cursor-pointer hover:bg-slate-200 transition-colors sticky top-[41px] z-10" onClick={() => toggleMonth(month)}>
+                            <td colSpan={10} className="px-4 py-1.5 shadow-sm">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                         {isExpanded ? <ChevronDown size={12} className="text-slate-500"/> : <ChevronRight size={12} className="text-slate-500"/>}
@@ -188,9 +185,9 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
                              const isDebtGenerated = !!t.linkedDebtId;
                              
                              return (
-                                <tr key={t.id} className={`hover:bg-slate-50 transition-colors group border-b border-slate-100 last:border-0`}>
-                                    <td className="px-6 py-2.5 whitespace-nowrap text-xs text-slate-600 font-mono">{t.date.substring(5)}</td>
-                                    <td className="px-4 py-2.5 whitespace-nowrap">
+                                <tr key={t.id} className={`hover:bg-slate-50 transition-colors group`}>
+                                    <td className="px-6 py-2 whitespace-nowrap text-xs text-slate-600 font-mono border-r border-transparent group-hover:border-slate-100">{t.date.substring(5)}</td>
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         {isForecast ? (
                                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[10px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-100">
                                             <Calendar size={8} className="mr-1"/> 预测
@@ -201,7 +198,7 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
                                             </span>
                                         )}
                                     </td>
-                                    <td className="px-4 py-2.5 whitespace-nowrap">
+                                    <td className="px-4 py-2 whitespace-nowrap">
                                         <div className="flex flex-col gap-0.5">
                                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-[4px] w-fit ${t.entity === Entity.PROPERTY ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>{t.entity}</span>
                                             <span className="text-[10px] text-slate-400 flex items-center gap-1 pl-0.5">
@@ -209,7 +206,7 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
                                             </span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-2.5 text-sm text-slate-700 font-medium max-w-xs truncate">
+                                    <td className="px-6 py-2 text-sm text-slate-700 font-medium max-w-xs truncate">
                                         <div className="flex items-center gap-2" title={t.description}>
                                             {isDebtGenerated && (
                                                 <div className="p-0.5 bg-slate-100 rounded text-slate-400 flex-shrink-0" title="来自债务台账">
@@ -220,17 +217,17 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
                                         </div>
                                     </td>
                                     
-                                    <td className={`px-4 py-2.5 whitespace-nowrap text-xs text-right font-mono ${t.amountHKD !== 0 ? 'text-slate-900' : 'text-slate-200'}`}>{formatNumber(t.amountHKD)}</td>
-                                    <td className={`px-4 py-2.5 whitespace-nowrap text-xs text-right font-mono ${t.amountRMB !== 0 ? 'text-slate-900' : 'text-slate-200'}`}>{formatNumber(t.amountRMB)}</td>
-                                    <td className={`px-4 py-2.5 whitespace-nowrap text-xs text-right font-mono ${t.amountUSD !== 0 ? 'text-slate-900' : 'text-slate-200'}`}>{formatNumber(t.amountUSD)}</td>
+                                    <td className={`px-4 py-2 whitespace-nowrap text-xs text-right font-mono ${t.amountHKD !== 0 ? 'text-slate-900' : 'text-slate-200'}`}>{formatNumber(t.amountHKD)}</td>
+                                    <td className={`px-4 py-2 whitespace-nowrap text-xs text-right font-mono ${t.amountRMB !== 0 ? 'text-slate-900' : 'text-slate-200'}`}>{formatNumber(t.amountRMB)}</td>
+                                    <td className={`px-4 py-2 whitespace-nowrap text-xs text-right font-mono ${t.amountUSD !== 0 ? 'text-slate-900' : 'text-slate-200'}`}>{formatNumber(t.amountUSD)}</td>
                                     
-                                    <td className={`px-6 py-2.5 whitespace-nowrap text-xs text-right font-mono font-bold bg-slate-50/30 ${t.totalBase < 0 ? 'text-rose-600' : t.totalBase > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                    <td className={`px-6 py-2 whitespace-nowrap text-xs text-right font-mono font-bold bg-slate-50/50 group-hover:bg-slate-100/50 ${t.totalBase < 0 ? 'text-rose-600' : t.totalBase > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
                                         {t.totalBase > 0 ? '+' : ''}{formatNumber(t.totalBase)}
                                     </td>
-                                    <td className="px-6 py-2.5 whitespace-nowrap text-xs text-right font-mono font-bold text-indigo-600 bg-indigo-50/10">
+                                    <td className="px-6 py-2 whitespace-nowrap text-xs text-right font-mono font-bold text-indigo-600 bg-indigo-50/10 group-hover:bg-indigo-50/20">
                                         {formatNumber(t.runningBal)}
                                     </td>
-                                    <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                                    <td className="px-4 py-2 text-center whitespace-nowrap">
                                         <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                             {!isDebtGenerated && (
                                                 <>
