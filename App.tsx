@@ -4,7 +4,6 @@ import FinancialTable from './components/FinancialTable';
 import Dashboard from './components/Dashboard';
 import FundCalendar from './components/FundCalendar';
 import DebtModal from './components/DebtModal';
-import SmartAnalysis from './components/SmartAnalysis';
 import { Transaction, Entity, ExchangeRates, TransactionCategory, TransactionStatus, Currency, Debt, Benchmark, LoanType } from './types';
 import { INITIAL_TRANSACTIONS, INITIAL_BALANCES, DEFAULT_RATES, INITIAL_DEBTS } from './constants';
 import { fetchCloudTransactions, saveCloudTransaction, deleteCloudTransaction, isCloudEnabled } from './services/supabase';
@@ -571,15 +570,6 @@ const App: React.FC = () => {
                 
                 {activeTab === 'DASHBOARD' && (
                     <div className="space-y-8">
-                        <SmartAnalysis 
-                            transactions={allTransactions} 
-                            rates={simRates} 
-                            baseCurrency={baseCurrency}
-                            riskParams={{ 
-                                financingFailRate, 
-                                interestRateAdd: Math.max(Math.abs(shiborShock), Math.abs(hiborShock), Math.abs(sofrShock)) / 100 
-                            }}
-                        />
                         <Dashboard 
                             transactions={allTransactions} 
                             rates={simRates} 
@@ -672,7 +662,7 @@ const App: React.FC = () => {
                 <div className="bg-slate-900 px-6 py-5 flex justify-between items-center">
                     <h3 className="text-white font-bold text-lg flex items-center gap-2">
                          {isEditMode ? <Settings2 size={18}/> : <Plus size={18}/>} 
-                         {isEditMode ? '编辑收支事项' : '新增日常收支事项'}
+                         {isEditMode ? '编辑收支事项' : '编辑日常收支事项'}
                     </h3>
                     <button onClick={() => setIsTransModalOpen(false)} className="text-slate-400 hover:text-white transition-colors"><X size={20}/></button>
                 </div>
