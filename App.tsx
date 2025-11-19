@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import FinancialTable from './components/FinancialTable';
 import Dashboard from './components/Dashboard';
 import FundCalendar from './components/FundCalendar';
@@ -7,16 +7,21 @@ import DebtModal from './components/DebtModal';
 import SmartAnalysis from './components/SmartAnalysis';
 import { Transaction, Entity, ExchangeRates, TransactionCategory, TransactionStatus, Currency, Debt, Benchmark, LoanType } from './types';
 import { INITIAL_TRANSACTIONS, INITIAL_BALANCES, DEFAULT_RATES, INITIAL_DEBTS } from './constants';
-import { LayoutDashboard, Table2, Plus, Building2, ChevronRight, Download, Settings2, RefreshCw, RotateCcw, CalendarDays, X, TrendingUp, AlertTriangle, Landmark, Upload, Search, Filter, DollarSign, Menu, ArrowRightLeft } from 'lucide-react';
+import { fetchCloudTransactions, saveCloudTransaction, deleteCloudTransaction, isCloudEnabled } from './services/supabase';
+import { LayoutDashboard, Table2, Plus, Building2, ChevronRight, Download, Settings2, RefreshCw, RotateCcw, CalendarDays, X, TrendingUp, AlertTriangle, Landmark, Upload, Search, Filter, DollarSign, Menu, ArrowRightLeft, Cloud, CloudOff, Loader2 } from 'lucide-react';
 
 // Simple ID generator
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'TRANSACTIONS' | 'CALENDAR'>('DASHBOARD');
-  const [manualTransactions, setManualTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
+  const [manualTransactions, setManualTransactions] = useState<Transaction[]>([]);
   const [debts, setDebts] = useState<Debt[]>(INITIAL_DEBTS);
   
+  // Cloud Sync State
+  const [loading, setLoading] = useState(true);
+  const [syncStatus, setSyncStatus] = useState<'CONNECTED' | 'LOCAL'>('LOCAL');
+
   const [entityFilter, setEntityFilter] = useState<Entity | 'ALL'>('ALL');
   const [isTransModalOpen, setIsTransModalOpen] = useState(false);
   const [isDebtModalOpen, setIsDebtModalOpen] = useState(false);
@@ -32,12 +37,43 @@ const App: React.FC = () => {
   
   // Professional Risk Factors
   const [financingFailRate, setFinancingFailRate] = useState<number>(0); // 0-100%
-  // Interest Rate Shocks (Basis Points) - Now supports Negative (Rate Cuts)
   const [shiborShock, setShiborShock] = useState<number>(0); // bps
   const [hiborShock, setHiborShock] = useState<number>(0); // bps
   const [sofrShock, setSofrShock] = useState<number>(0); // bps
 
   const [showSim, setShowSim] = useState(false);
+
+  // --- INITIAL DATA LOAD ---
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      if (isCloudEnabled) {
+        const cloudData = await fetchCloudTransactions();
+        if (cloudData && cloudData.length > 0) {
+          setManualTransactions(cloudData);
+          setSyncStatus('CONNECTED');
+        } else {
+          // Fallback to local initial data if DB is empty but connected, or just keep empty?
+          // Let's keep Initial Data for the demo feel if DB is empty
+          if (cloudData && cloudData.length === 0) {
+             // Optional: Seed DB? For now, just use Initial locally but mark as connected
+             setManualTransactions(INITIAL_TRANSACTIONS); 
+             // In a real app, we might not want to auto-seed, but for this demo:
+             setSyncStatus('CONNECTED');
+          } else {
+             setManualTransactions(INITIAL_TRANSACTIONS);
+             setSyncStatus('LOCAL'); // Failed to fetch
+          }
+        }
+      } else {
+        setManualTransactions(INITIAL_TRANSACTIONS);
+        setSyncStatus('LOCAL');
+      }
+      setLoading(false);
+    };
+    loadData();
+  }, []);
+
 
   // --- DEBT ENGINE LOGIC ---
   const debtTransactions = useMemo(() => {
@@ -149,9 +185,14 @@ const App: React.FC = () => {
   const [editingTrans, setEditingTrans] = useState<Partial<Transaction>>(defaultTransState);
   const [isEditMode, setIsEditMode] = useState(false);
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('确认删除此记录?')) {
+      // Optimistic Update
       setManualTransactions(prev => prev.filter(t => t.id !== id));
+      
+      if (syncStatus === 'CONNECTED') {
+          await deleteCloudTransaction(id);
+      }
     }
   };
 
@@ -161,7 +202,7 @@ const App: React.FC = () => {
       setIsTransModalOpen(true);
   };
 
-  const handleSaveTransaction = () => {
+  const handleSaveTransaction = async () => {
     if (!editingTrans.description) return alert('请输入项目说明');
     
     const transaction: Transaction = {
@@ -176,10 +217,15 @@ const App: React.FC = () => {
         status: editingTrans.status!
     };
 
+    // Optimistic Update
     if (isEditMode) {
         setManualTransactions(prev => prev.map(t => t.id === transaction.id ? transaction : t));
     } else {
         setManualTransactions(prev => [...prev, transaction]);
+    }
+
+    if (syncStatus === 'CONNECTED') {
+        await saveCloudTransaction(transaction);
     }
 
     setIsTransModalOpen(false);
@@ -273,6 +319,11 @@ const App: React.FC = () => {
             }
             if (newTrans.length > 0) {
                 setManualTransactions(prev => [...prev, ...newTrans]);
+                
+                if (syncStatus === 'CONNECTED') {
+                    newTrans.forEach(t => saveCloudTransaction(t));
+                }
+                
                 alert(`成功导入 ${newTrans.length} 条交易记录！`);
             } else {
                 alert("未能解析出有效数据，请检查CSV格式");
@@ -286,8 +337,26 @@ const App: React.FC = () => {
     e.target.value = '';
   };
 
+  const refreshData = async () => {
+      if (syncStatus !== 'CONNECTED') return;
+      setLoading(true);
+      const cloudData = await fetchCloudTransactions();
+      if (cloudData) setManualTransactions(cloudData);
+      setLoading(false);
+  };
+
   // Determine if we are in a non-standard scenario
   const isStressTesting = financingFailRate > 0 || Math.abs(shiborShock) > 0 || Math.abs(hiborShock) > 0 || Math.abs(sofrShock) > 0;
+
+  if (loading && manualTransactions.length === 0) {
+      return (
+          <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0f172a] text-white">
+              <Loader2 size={48} className="animate-spin text-indigo-500 mb-4"/>
+              <h2 className="text-xl font-bold">正在连接加密资金数据库...</h2>
+              <p className="text-slate-400 text-sm mt-2">Connecting to Secure Cloud Environment</p>
+          </div>
+      )
+  }
 
   return (
     <div className="flex h-screen bg-[#f1f5f9] font-sans overflow-hidden text-slate-900">
@@ -310,8 +379,10 @@ const App: React.FC = () => {
                 <div className="ml-4 whitespace-nowrap">
                     <h1 className="text-white font-bold text-lg">集团资金通</h1>
                     <div className="flex items-center gap-2 mt-0.5">
-                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                         <p className="text-[10px] text-slate-400 font-medium uppercase">Enterprise v5.1</p>
+                         <div className={`w-1.5 h-1.5 rounded-full ${syncStatus === 'CONNECTED' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></div>
+                         <p className="text-[10px] text-slate-400 font-medium uppercase">
+                             {syncStatus === 'CONNECTED' ? 'Cloud Synced' : 'Local Demo Mode'}
+                         </p>
                     </div>
                 </div>
             )}
@@ -367,6 +438,25 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-3 md:gap-6">
+                
+                {/* Sync Status Indicator */}
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200">
+                    {syncStatus === 'CONNECTED' ? (
+                        <div className="flex items-center gap-1.5 text-emerald-600">
+                            <Cloud size={14} />
+                            <span className="text-[10px] font-bold">云端已连接</span>
+                            <button onClick={refreshData} className="ml-1 hover:text-emerald-800" title="刷新数据">
+                                <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+                            </button>
+                        </div>
+                    ) : (
+                         <div className="flex items-center gap-1.5 text-slate-400">
+                            <CloudOff size={14} />
+                            <span className="text-[10px] font-bold">本地演示模式</span>
+                        </div>
+                    )}
+                </div>
+
                 <div className="hidden md:flex bg-slate-100/80 p-1 rounded-lg border border-slate-200/50">
                     {Object.values(Currency).map((c) => (
                         <button
