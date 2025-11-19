@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Transaction, Entity, ExchangeRates, TransactionCategory, TransactionStatus, Currency } from '../types';
-import { Trash2, Briefcase, Building2, ArrowRightLeft, Wallet, Calendar, CheckCircle2, Landmark, ArrowUpDown, Edit2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Trash2, Briefcase, Building2, ArrowRightLeft, Wallet, Calendar, CheckCircle2, Landmark, Edit2, ChevronDown, ChevronRight, Search, Filter } from 'lucide-react';
 
 interface FinancialTableProps {
   transactions: Transaction[];
@@ -23,8 +23,8 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
   baseCurrency
 }) => {
   
-  const [sortConfig, setSortConfig] = useState<{ key: keyof Transaction | 'amount' | 'total'; direction: 'asc' | 'desc' }>({ key: 'date', direction: 'asc' });
   const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
+  const [searchTerm, setSearchTerm] = useState('');
 
   const formatNumber = (num: number) => {
     if (Math.abs(num) < 0.001) return '-';
@@ -46,15 +46,22 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
         case TransactionCategory.OPERATING: return <Briefcase size={14} className="text-blue-500" />;
         case TransactionCategory.FINANCING: return <Wallet size={14} className="text-purple-500" />;
         case TransactionCategory.INVESTING: return <Building2 size={14} className="text-amber-500" />;
-        case TransactionCategory.INTERNAL: return <ArrowRightLeft size={14} className="text-gray-500" />;
+        case TransactionCategory.INTERNAL: return <ArrowRightLeft size={14} className="text-slate-400" />;
         default: return <Briefcase size={14} />;
     }
   };
 
   // Data Processing & Grouping
   const { groupedData, initialBalanceBase } = useMemo(() => {
-      // 1. Filter & Sort
-      let processed = [...transactions].filter(t => entityFilter === 'ALL' || t.entity === entityFilter);
+      // 1. Filter by Entity & Search Term
+      let processed = [...transactions].filter(t => {
+          const matchEntity = entityFilter === 'ALL' || t.entity === entityFilter;
+          const matchSearch = searchTerm === '' || 
+              t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              t.amountRMB.toString().includes(searchTerm) ||
+              t.date.includes(searchTerm);
+          return matchEntity && matchSearch;
+      });
       
       // Determine Initial Balance based on Filter
       let startBase = 0;
@@ -67,11 +74,6 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
           startBase = getTotalInBase(b.HKD, b.RMB, b.USD);
       }
 
-      // Always sort by date primarily for Running Balance to make sense, then apply user sort if needed within groups?
-      // Actually, for a financial ledger, Date is the only logical sort for Running Balance.
-      // If user sorts by Amount, Running Balance loses meaning. 
-      // So we will FORCE date sort for the calculation, but maybe allow visual sort? 
-      // Let's stick to Date Sort as primary.
       processed.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       // 2. Calculate Running Balance & Group by Month
@@ -84,14 +86,7 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
               groups[monthKey] = { month: monthKey, trans: [], monthEndBal: 0, netFlow: 0 };
           }
           
-          // Logic: If Internal Transfer, does it affect the filtered view?
-          // If ALL: Internal transfer nets to 0 usually (unless cross currency gap).
-          // If Entity Filter: It matters.
           const totalInBase = getTotalInBase(t.amountHKD, t.amountRMB, t.amountUSD);
-          
-          // Skip running balance update for Internal transfers IF viewing ALL (it's a wash), 
-          // but keep it for Entity view.
-          // Actually, in 'ALL' view, +5 and -5 are separate rows. So we just add them.
           currentRunningBal += totalInBase;
 
           groups[monthKey].trans.push({
@@ -104,7 +99,7 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
       });
 
       return { groupedData: groups, initialBalanceBase: startBase };
-  }, [transactions, entityFilter, rates, baseCurrency, startBalances]);
+  }, [transactions, entityFilter, rates, baseCurrency, startBalances, searchTerm]);
 
   const sortedMonthKeys = Object.keys(groupedData).sort();
 
@@ -113,30 +108,56 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full animate-in fade-in duration-500">
+      {/* Toolbar */}
+      <div className="px-6 py-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
+         <div className="flex items-center gap-2 text-slate-500">
+             <Filter size={16} />
+             <span className="text-xs font-bold uppercase">明细筛选</span>
+         </div>
+         <div className="relative group w-full sm:w-64">
+             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors"/>
+             <input 
+                type="text" 
+                placeholder="搜索摘要、金额或日期..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-4 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+             />
+         </div>
+      </div>
+
       <div className="overflow-x-auto flex-1 scrollbar-thin scrollbar-thumb-slate-200">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50 sticky top-0 z-20 shadow-sm">
             <tr>
-              <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-32">日期</th>
-              <th className="px-4 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-24">状态</th>
-              <th className="px-4 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-32">实体 / 类别</th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider min-w-[200px]">交易事项</th>
-              <th className="px-4 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider w-24">HKD (亿)</th>
-              <th className="px-4 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider w-24">RMB (亿)</th>
-              <th className="px-4 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider w-24">USD (亿)</th>
-              <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider w-32 bg-slate-100/50">合计 {baseCurrency}</th>
-              <th className="px-6 py-4 text-right text-xs font-bold text-indigo-600 uppercase tracking-wider w-32 bg-indigo-50/30">实时余额</th>
-              <th className="px-4 py-4 text-center w-16">操作</th>
+              <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-32">日期</th>
+              <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-24">状态</th>
+              <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider w-32">实体 / 类别</th>
+              <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider min-w-[200px]">交易事项</th>
+              <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider w-24">HKD</th>
+              <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider w-24">RMB</th>
+              <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider w-24">USD</th>
+              <th className="px-6 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider w-32 bg-slate-100/50">合计 ({baseCurrency})</th>
+              <th className="px-6 py-3 text-right text-[10px] font-bold text-indigo-600 uppercase tracking-wider w-32 bg-indigo-50/30">实时余额</th>
+              <th className="px-4 py-3 text-center w-16"></th>
             </tr>
           </thead>
           <tbody className="bg-white">
             {/* Initial Balance Row */}
-            <tr className="bg-slate-50 border-b border-slate-200">
-                <td colSpan={8} className="px-6 py-3 text-right text-xs font-bold text-slate-500">期初资金余额</td>
-                <td className="px-6 py-3 text-right text-xs font-bold font-mono text-slate-800 bg-indigo-50/30">{formatNumber(initialBalanceBase)}</td>
+            <tr className="bg-slate-50/50 border-b border-slate-200">
+                <td colSpan={8} className="px-6 py-2 text-right text-xs font-bold text-slate-400 uppercase">期初资金余额</td>
+                <td className="px-6 py-2 text-right text-xs font-bold font-mono text-slate-700 bg-indigo-50/30">{formatNumber(initialBalanceBase)}</td>
                 <td></td>
             </tr>
+
+            {sortedMonthKeys.length === 0 && (
+                <tr>
+                    <td colSpan={10} className="px-6 py-12 text-center text-slate-400 text-sm">
+                        没有找到匹配的交易记录
+                    </td>
+                </tr>
+            )}
 
             {sortedMonthKeys.map(month => {
                 const group = groupedData[month];
@@ -145,15 +166,15 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
                 return (
                     <React.Fragment key={month}>
                         {/* Month Header */}
-                        <tr className="bg-slate-100/80 border-y border-slate-200 cursor-pointer hover:bg-slate-200/50" onClick={() => toggleMonth(month)}>
-                            <td colSpan={10} className="px-6 py-2">
+                        <tr className="bg-slate-100 border-y border-slate-200 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => toggleMonth(month)}>
+                            <td colSpan={10} className="px-4 py-1.5">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        {isExpanded ? <ChevronDown size={14} className="text-slate-500"/> : <ChevronRight size={14} className="text-slate-500"/>}
+                                        {isExpanded ? <ChevronDown size={12} className="text-slate-500"/> : <ChevronRight size={12} className="text-slate-500"/>}
                                         <span className="text-xs font-bold text-slate-700">{month}</span>
-                                        <span className="text-[10px] text-slate-400 bg-white px-2 py-0.5 rounded-full border border-slate-200">{group.trans.length} 笔交易</span>
+                                        <span className="text-[10px] text-slate-500 bg-white px-1.5 rounded border border-slate-200">{group.trans.length}</span>
                                     </div>
-                                    <div className="flex items-center gap-4 text-xs">
+                                    <div className="flex items-center gap-4 text-[10px]">
                                         <span className="text-slate-500">月度净流: <span className={`font-mono font-bold ${group.netFlow >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{group.netFlow > 0 ? '+' : ''}{formatNumber(group.netFlow)}</span></span>
                                         <span className="text-slate-500">月末余额: <span className="font-mono font-bold text-indigo-600">{formatNumber(group.monthEndBal)}</span></span>
                                     </div>
@@ -168,56 +189,56 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
                              
                              return (
                                 <tr key={t.id} className={`hover:bg-slate-50 transition-colors group border-b border-slate-100 last:border-0`}>
-                                    <td className="px-6 py-3 whitespace-nowrap text-xs text-slate-600 font-mono">{t.date.substring(5)}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap">
+                                    <td className="px-6 py-2.5 whitespace-nowrap text-xs text-slate-600 font-mono">{t.date.substring(5)}</td>
+                                    <td className="px-4 py-2.5 whitespace-nowrap">
                                         {isForecast ? (
-                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-100">
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[10px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-100">
                                             <Calendar size={8} className="mr-1"/> 预测
                                             </span>
                                         ) : (
-                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">
                                                 <CheckCircle2 size={8} className="mr-1"/> 实绩
                                             </span>
                                         )}
                                     </td>
-                                    <td className="px-4 py-3 whitespace-nowrap">
+                                    <td className="px-4 py-2.5 whitespace-nowrap">
                                         <div className="flex flex-col gap-0.5">
-                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded w-fit ${t.entity === Entity.PROPERTY ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>{t.entity}</span>
+                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-[4px] w-fit ${t.entity === Entity.PROPERTY ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>{t.entity}</span>
                                             <span className="text-[10px] text-slate-400 flex items-center gap-1 pl-0.5">
                                                 {getCategoryIcon(t.category)} {t.category}
                                             </span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-3 text-sm text-slate-700 font-medium max-w-xs truncate">
+                                    <td className="px-6 py-2.5 text-sm text-slate-700 font-medium max-w-xs truncate">
                                         <div className="flex items-center gap-2" title={t.description}>
                                             {isDebtGenerated && (
-                                                <div className="p-1 bg-slate-100 rounded text-slate-400 flex-shrink-0" title="来自债务台账">
-                                                    <Landmark size={12} />
+                                                <div className="p-0.5 bg-slate-100 rounded text-slate-400 flex-shrink-0" title="来自债务台账">
+                                                    <Landmark size={10} />
                                                 </div>
                                             )}
                                             <span className="truncate">{t.description}</span>
                                         </div>
                                     </td>
                                     
-                                    <td className={`px-4 py-3 whitespace-nowrap text-xs text-right font-mono ${t.amountHKD !== 0 ? 'text-slate-900' : 'text-slate-200'}`}>{formatNumber(t.amountHKD)}</td>
-                                    <td className={`px-4 py-3 whitespace-nowrap text-xs text-right font-mono ${t.amountRMB !== 0 ? 'text-slate-900' : 'text-slate-200'}`}>{formatNumber(t.amountRMB)}</td>
-                                    <td className={`px-4 py-3 whitespace-nowrap text-xs text-right font-mono ${t.amountUSD !== 0 ? 'text-slate-900' : 'text-slate-200'}`}>{formatNumber(t.amountUSD)}</td>
+                                    <td className={`px-4 py-2.5 whitespace-nowrap text-xs text-right font-mono ${t.amountHKD !== 0 ? 'text-slate-900' : 'text-slate-200'}`}>{formatNumber(t.amountHKD)}</td>
+                                    <td className={`px-4 py-2.5 whitespace-nowrap text-xs text-right font-mono ${t.amountRMB !== 0 ? 'text-slate-900' : 'text-slate-200'}`}>{formatNumber(t.amountRMB)}</td>
+                                    <td className={`px-4 py-2.5 whitespace-nowrap text-xs text-right font-mono ${t.amountUSD !== 0 ? 'text-slate-900' : 'text-slate-200'}`}>{formatNumber(t.amountUSD)}</td>
                                     
-                                    <td className={`px-6 py-3 whitespace-nowrap text-xs text-right font-mono font-bold bg-slate-50/30 ${t.totalBase < 0 ? 'text-rose-600' : t.totalBase > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                    <td className={`px-6 py-2.5 whitespace-nowrap text-xs text-right font-mono font-bold bg-slate-50/30 ${t.totalBase < 0 ? 'text-rose-600' : t.totalBase > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
                                         {t.totalBase > 0 ? '+' : ''}{formatNumber(t.totalBase)}
                                     </td>
-                                    <td className="px-6 py-3 whitespace-nowrap text-xs text-right font-mono font-bold text-indigo-600 bg-indigo-50/10">
+                                    <td className="px-6 py-2.5 whitespace-nowrap text-xs text-right font-mono font-bold text-indigo-600 bg-indigo-50/10">
                                         {formatNumber(t.runningBal)}
                                     </td>
-                                    <td className="px-4 py-3 text-center whitespace-nowrap">
-                                        <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                                        <div className="flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                             {!isDebtGenerated && (
                                                 <>
-                                                    <button onClick={() => onEdit(t)} className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 p-1.5 rounded transition-all">
-                                                        <Edit2 size={14} />
+                                                    <button onClick={() => onEdit(t)} className="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 p-1 rounded transition-all">
+                                                        <Edit2 size={12} />
                                                     </button>
-                                                    <button onClick={() => onDelete(t.id)} className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded transition-all">
-                                                        <Trash2 size={14} />
+                                                    <button onClick={() => onDelete(t.id)} className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1 rounded transition-all">
+                                                        <Trash2 size={12} />
                                                     </button>
                                                 </>
                                             )}
@@ -232,8 +253,9 @@ const FinancialTable: React.FC<FinancialTableProps> = ({
           </tbody>
         </table>
       </div>
-      <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex justify-between items-center flex-shrink-0">
-          <p className="text-xs text-slate-500 font-medium">显示 {transactions.length} 条记录 (按月分组)</p>
+      <div className="bg-slate-50 px-6 py-2 border-t border-slate-200 flex justify-between items-center flex-shrink-0">
+          <p className="text-[10px] text-slate-400 font-medium">显示 {transactions.length} 条记录 (按月分组)</p>
+          <p className="text-[10px] text-slate-400">本位币: {baseCurrency}</p>
       </div>
     </div>
   );
