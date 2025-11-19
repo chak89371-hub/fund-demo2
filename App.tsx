@@ -49,14 +49,17 @@ const App: React.FC = () => {
       setLoading(true);
       
       try {
-        // Define a timeout promise that rejects after 3 seconds
-        const timeoutPromise = new Promise<null>((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), 3000)
+        // 1. Create a "Soft Timeout" promise
+        // Instead of rejecting (which causes error overlays), we resolve to null gracefully.
+        const timeoutPromise = new Promise<Transaction[] | null>((resolve) => 
+          setTimeout(() => {
+            console.warn("Cloud DB connection timed out (likely cold start). Falling back to local.");
+            resolve(null);
+          }, 5000) // Increased to 5 seconds for cold starts
         );
 
-        // If cloud is configured, race the fetch against the timeout
+        // 2. Race the actual fetch against the timeout
         if (isCloudEnabled) {
-          try {
             const cloudData = await Promise.race([
               fetchCloudTransactions(),
               timeoutPromise
@@ -66,29 +69,26 @@ const App: React.FC = () => {
               setManualTransactions(cloudData);
               setSyncStatus('CONNECTED');
             } else {
-              // Connected but empty DB, or explicit null returned
-              // For demo purposes, fall back to initial mock data but mark as connected if array was empty
+              // Either null (timeout/error) or empty array (new DB)
+              // If it was a timeout (null), we default to local.
+              // If it was empty array, we technically connected, but have no data.
+              // For this demo, let's load mock data if empty, but mark connected.
               if (cloudData && cloudData.length === 0) {
                  setManualTransactions(INITIAL_TRANSACTIONS); 
                  setSyncStatus('CONNECTED');
               } else {
-                 // fetch returned null (error)
+                 // Null result = Timeout or Error
                  setManualTransactions(INITIAL_TRANSACTIONS);
                  setSyncStatus('LOCAL');
               }
             }
-          } catch (err) {
-             console.warn("Cloud connection timed out or failed, falling back to local.", err);
-             setManualTransactions(INITIAL_TRANSACTIONS);
-             setSyncStatus('LOCAL');
-          }
         } else {
           // No keys configured
           setManualTransactions(INITIAL_TRANSACTIONS);
           setSyncStatus('LOCAL');
         }
       } catch (e) {
-        console.error("Critical initialization error:", e);
+        console.error("Initialization error:", e);
         setManualTransactions(INITIAL_TRANSACTIONS);
       } finally {
         setLoading(false);
