@@ -2,10 +2,10 @@
 import React, { useMemo, useState } from 'react';
 import { 
   ComposedChart, Line, Bar, Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  Cell, PieChart, Pie, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, BarChart
+  Cell, PieChart, Pie, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, BarChart, ReferenceLine
 } from 'recharts';
 import { Transaction, Entity, ExchangeRates, TransactionCategory, Currency } from '../types';
-import { ShieldCheck, Activity, PieChart as PieIcon, DollarSign, TrendingUp, Layers, ArrowUpRight, ArrowDownRight, Filter, BarChart2, Landmark, ArrowDownLeft } from 'lucide-react';
+import { ShieldCheck, Activity, PieChart as PieIcon, ArrowUpRight, ArrowDownLeft, Layers, Landmark, BarChart2 } from 'lucide-react';
 
 interface DashboardProps {
   transactions: Transaction[];
@@ -98,7 +98,9 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
   const latestKnownData = chartData[chartData.length - 1];
   const latestBalance = latestKnownData?.filteredBalance || 0;
 
-  const safetyThreshold = convertToBase(0, 100, 0);
+  // Safety Threshold logic
+  const safetyThreshold = useMemo(() => convertToBase(0, 100, 0), [baseCurrency, rates]);
+  
   const netFlow = currentMonth?.net || 0;
 
   // FX Data (Total Exposure)
@@ -252,6 +254,9 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
                         <YAxis tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} dx={-10}/>
                         <Tooltip content={<CustomTooltip />} cursor={{stroke: '#6366f1', strokeWidth: 1, strokeDasharray: '4 4'}}/>
                         <Legend iconType="circle" wrapperStyle={{fontSize: '12px', paddingTop: '20px'}}/>
+                        
+                        <ReferenceLine y={safetyThreshold} label={{ value: '安全警戒线', position: 'insideTopRight', fill: '#ef4444', fontSize: 10 }} stroke="#ef4444" strokeDasharray="3 3" />
+                        
                         <Area 
                             type="monotone" 
                             dataKey="filteredBalance" 
@@ -262,6 +267,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
                             activeDot={{r:6, strokeWidth:0, fill: '#4f46e5'}} 
                             animationDuration={1500}
                         />
+                        {/* Using Bar for Net Flow overlay */}
                         <Bar dataKey="net" name="净流量" barSize={4} fill="#cbd5e1" radius={[2,2,0,0]} />
                     </AreaChart>
                 </ResponsiveContainer>
