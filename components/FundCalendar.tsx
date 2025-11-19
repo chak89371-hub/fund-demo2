@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Transaction, Entity, ExchangeRates, Currency, TransactionCategory } from '../types';
-import { ChevronLeft, ChevronRight, X, ArrowUpRight, ArrowDownLeft, Wallet, CalendarCheck, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, ArrowUpRight, ArrowDownLeft, CalendarCheck, AlertCircle } from 'lucide-react';
 
 interface FundCalendarProps {
   transactions: Transaction[];
@@ -24,7 +24,7 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
     }
   };
 
-  // 1. Pre-calculate Daily Balances for the entire dataset timeline
+  // 1. Pre-calculate Daily Balances
   const dailyBalances = useMemo(() => {
       const sortedAll = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       if (sortedAll.length === 0) return {};
@@ -197,7 +197,7 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
                                 <div className="space-y-0.5 md:space-y-1 mt-1">
                                     {/* Projected Balance (Small) */}
                                     <div className="text-[8px] md:text-[10px] text-slate-400 font-mono text-right hidden sm:block">
-                                        余额: {cell.endBalance.toFixed(0)}
+                                        {cell.endBalance.toFixed(0)}
                                     </div>
 
                                     {/* Net Flow Bar */}
@@ -234,7 +234,7 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
                             </button>
                         </div>
                         <div className="mt-4 bg-white/60 p-3 rounded-xl border border-indigo-100 flex items-center justify-between">
-                             <span className="text-xs text-slate-500 font-medium">预计当日余额</span>
+                             <span className="text-xs text-slate-500 font-medium">当日余额</span>
                              <span className="text-lg font-bold text-indigo-600 font-mono">
                                 {dailyBalances[selectedDate]?.toFixed(2)}
                              </span>
