@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Transaction, Entity, ExchangeRates, Currency, TransactionCategory } from '../types';
 import { ChevronLeft, ChevronRight, X, ArrowUpRight, ArrowDownLeft, Wallet, CalendarCheck, AlertCircle } from 'lucide-react';
@@ -24,38 +25,29 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
   };
 
   // 1. Pre-calculate Daily Balances for the entire dataset timeline
-  // This is critical to know the 'Starting Balance' of any given day.
   const dailyBalances = useMemo(() => {
       const sortedAll = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      const balanceMap: Record<string, number> = {};
-      
-      // Initial Total
+      if (sortedAll.length === 0) return {};
+
       let currentTotal = 0;
       Object.values(startBalances).forEach(b => {
           currentTotal += convert(b.HKD, b.RMB, b.USD);
       });
 
-      // Iterate through every transaction to build a timeline
-      // Note: We need a continuous date range to carry over balances for days with no transactions
-      if (sortedAll.length === 0) return {};
-
-      const startDate = new Date(new Date().setDate(new Date().getDate() - 90)); // Start a bit back
-      const endDate = new Date(new Date().setDate(new Date().getDate() + 500)); // Go far future
+      const startDate = new Date(new Date().setDate(new Date().getDate() - 90)); 
+      const endDate = new Date(new Date().setDate(new Date().getDate() + 500)); 
       
       let runningBalance = currentTotal;
       const tempMap: Record<string, number> = {};
 
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
           const dateStr = d.toISOString().split('T')[0];
-          
-          // Find transactions for this specific date
           const daysTrans = sortedAll.filter(t => t.date === dateStr);
           daysTrans.forEach(t => {
                if (t.category !== TransactionCategory.INTERNAL) {
                    runningBalance += convert(t.amountHKD, t.amountRMB, t.amountUSD);
                }
           });
-          
           tempMap[dateStr] = runningBalance;
       }
       return tempMap;
@@ -74,16 +66,13 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
     
     const grid: { day: number | null; dateStr: string | null; netFlow: number; endBalance: number; hasData: boolean }[] = [];
 
-    // Pad start
     for (let i = 0; i < startingDay; i++) {
       grid.push({ day: null, dateStr: null, netFlow: 0, endBalance: 0, hasData: false });
     }
 
-    // Fill days
     for (let i = 1; i <= daysInMonth; i++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
       
-      // Net Flow
       const dayTrans = transactions.filter(t => t.date === dateStr);
       let dailyNet = 0;
       dayTrans.forEach(t => {
@@ -92,7 +81,6 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
         }
       });
 
-      // End Balance
       const endBalance = dailyBalances[dateStr] || 0;
 
       grid.push({ 
@@ -111,7 +99,6 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
   const monthSummary = useMemo(() => {
       if (calendarGrid.length === 0) return { start: 0, in: 0, out: 0, end: 0 };
       
-      // Find first valid day
       const firstDayCell = calendarGrid.find(c => c.day === 1);
       const lastDayCell = calendarGrid[calendarGrid.length - 1];
 
@@ -132,22 +119,23 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
   const nextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
   const prevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
 
-  // Safety Threshold for Balance Visuals
   const safetyThreshold = convert(0, 100, 0);
 
   return (
     <div className="flex flex-col h-full gap-4">
       {/* Month Summary Bar */}
-      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 flex justify-between items-center animate-in fade-in slide-in-from-top-2">
-         <div className="flex items-center gap-4">
-            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
-                <CalendarCheck size={24} />
-            </div>
-            <div>
-                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                    {currentDate.getFullYear()}年 {currentDate.getMonth() + 1}月
-                </h2>
-                <p className="text-xs text-slate-400">资金月度概览</p>
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4 animate-in fade-in slide-in-from-top-2">
+         <div className="flex items-center justify-between w-full md:w-auto gap-4">
+            <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+                    <CalendarCheck size={24} />
+                </div>
+                <div>
+                    <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        {currentDate.getFullYear()}年 {currentDate.getMonth() + 1}月
+                    </h2>
+                    <p className="text-xs text-slate-400">资金月度概览</p>
+                </div>
             </div>
             <div className="flex bg-slate-100 rounded-lg p-1 ml-4">
                 <button onClick={prevMonth} className="p-1.5 hover:bg-white rounded-md text-slate-500 transition-all shadow-sm hover:shadow"><ChevronLeft size={16}/></button>
@@ -155,20 +143,20 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
             </div>
          </div>
          
-         <div className="flex gap-8">
+         <div className="grid grid-cols-2 md:flex md:gap-8 w-full md:w-auto gap-4">
             <SummaryItem label="期初余额" value={monthSummary.start} color="text-slate-600" />
-            <div className="w-px bg-slate-200 h-8 my-auto"></div>
+            <div className="hidden md:block w-px bg-slate-200 h-8 my-auto"></div>
             <SummaryItem label="本月流入" value={monthSummary.in} color="text-emerald-600" prefix="+" />
-            <div className="w-px bg-slate-200 h-8 my-auto"></div>
+            <div className="hidden md:block w-px bg-slate-200 h-8 my-auto"></div>
             <SummaryItem label="本月流出" value={monthSummary.out} color="text-rose-600" prefix="-" />
-            <div className="w-px bg-slate-200 h-8 my-auto"></div>
+            <div className="hidden md:block w-px bg-slate-200 h-8 my-auto"></div>
             <SummaryItem label="期末余额" value={monthSummary.end} color="text-indigo-600" bold />
          </div>
       </div>
 
-      <div className="flex gap-6 flex-1 min-h-0">
+      <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
         {/* Calendar Grid */}
-        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden min-h-[400px]">
             {/* Weekday Headers */}
             <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50/80">
                 {['日', '一', '二', '三', '四', '五', '六'].map(d => (
@@ -188,7 +176,7 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
                         key={idx} 
                         onClick={() => cell.dateStr && setSelectedDate(cell.dateStr)}
                         className={`
-                            relative bg-white transition-all cursor-pointer hover:bg-indigo-50/30 p-2 flex flex-col justify-between group
+                            relative bg-white transition-all cursor-pointer hover:bg-indigo-50/30 p-1 md:p-2 flex flex-col justify-between group
                             ${!cell.day ? 'bg-slate-50/50 pointer-events-none' : ''}
                             ${isSelected ? 'ring-2 ring-inset ring-indigo-500 z-10' : ''}
                             ${isRisk && cell.day ? 'bg-rose-50/30' : ''}
@@ -197,27 +185,25 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
                         {cell.day && (
                             <>
                                 <div className="flex justify-between items-start">
-                                    <span className={`text-sm font-medium w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-700'}`}>
+                                    <span className={`text-xs md:text-sm font-medium w-5 h-5 md:w-6 md:h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-700'}`}>
                                         {cell.day}
                                     </span>
                                     {/* Risk Dot */}
                                     {isRisk && (
-                                        <Tooltip text="余额低于安全线">
-                                            <AlertCircle size={14} className="text-amber-500" />
-                                        </Tooltip>
+                                        <AlertCircle size={12} className="text-amber-500 md:w-4 md:h-4" />
                                     )}
                                 </div>
                                 
-                                <div className="space-y-1 mt-1">
+                                <div className="space-y-0.5 md:space-y-1 mt-1">
                                     {/* Projected Balance (Small) */}
-                                    <div className="text-[10px] text-slate-400 font-mono text-right">
+                                    <div className="text-[8px] md:text-[10px] text-slate-400 font-mono text-right hidden sm:block">
                                         余额: {cell.endBalance.toFixed(0)}
                                     </div>
 
                                     {/* Net Flow Bar */}
                                     {cell.hasData && (
-                                        <div className={`text-xs font-bold text-right ${cell.netFlow > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                            {cell.netFlow > 0 ? '+' : ''}{cell.netFlow.toFixed(1)}
+                                        <div className={`text-[10px] md:text-xs font-bold text-right ${cell.netFlow > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                            {cell.netFlow > 0 ? '+' : ''}{cell.netFlow.toFixed(0)}
                                         </div>
                                     )}
                                 </div>
@@ -234,8 +220,8 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
         </div>
 
         {/* Detail Panel */}
-        <div className={`w-80 bg-white rounded-2xl shadow-xl border border-slate-200 flex flex-col transition-all duration-300 transform ${selectedDate ? 'translate-x-0 opacity-100' : 'translate-x-10 opacity-0 pointer-events-none'}`}>
-            {selectedDate ? (
+        <div className={`lg:w-80 bg-white rounded-2xl shadow-xl border border-slate-200 flex flex-col transition-all duration-300 ${selectedDate ? 'h-96 lg:h-auto opacity-100' : 'h-0 lg:h-auto lg:opacity-0 pointer-events-none overflow-hidden'}`}>
+            {selectedDate && (
                 <>
                     <div className="p-5 border-b border-slate-100 bg-gradient-to-br from-indigo-50 to-white rounded-t-2xl">
                         <div className="flex justify-between items-start">
@@ -243,7 +229,7 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
                                 <p className="text-xs text-slate-400 uppercase font-bold">Selected Date</p>
                                 <h3 className="text-xl font-bold text-slate-800 mt-0.5">{selectedDate}</h3>
                             </div>
-                            <button onClick={() => setSelectedDate(null)} className="text-slate-400 hover:text-indigo-600 transition-colors">
+                            <button onClick={() => setSelectedDate(null)} className="text-slate-400 hover:text-indigo-600 transition-colors lg:hidden">
                                 <X size={20} />
                             </button>
                         </div>
@@ -288,7 +274,7 @@ const FundCalendar: React.FC<FundCalendarProps> = ({ transactions, baseCurrency,
                         )}
                     </div>
                 </>
-            ) : null}
+            )}
         </div>
       </div>
     </div>
@@ -303,14 +289,5 @@ const SummaryItem = ({ label, value, color, prefix = '', bold }: any) => (
         </p>
     </div>
 );
-
-const Tooltip = ({ text, children }: any) => (
-    <div className="group relative flex items-center">
-        {children}
-        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-[10px] text-white bg-slate-800 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20">
-            {text}
-        </span>
-    </div>
-)
 
 export default FundCalendar;
