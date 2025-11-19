@@ -53,40 +53,46 @@ export const analyzeFinancialData = async (
   const isStressTest = riskParams && (riskParams.financingFailRate > 0 || riskParams.interestRateAdd > 0);
   
   const prompt = `
-    你是一位首席财务官(CFO)助理，负责集团总部的资金流动性分析。
-    当前报表本位币为: ${baseCurrency}。
-    当前汇率设定: HKD/RMB=${rates.HKD_TO_RMB.toFixed(3)}, USD/RMB=${rates.USD_TO_RMB.toFixed(3)}。
+    你现在是集团首席财务官(CFO)的AI智能助手。请对当前的资金计划进行简要、犀利的诊断。
+    
+    【基础信息】
+    - 报表本位币: ${baseCurrency}
+    - 汇率设定: HKD/RMB=${rates.HKD_TO_RMB.toFixed(3)}, USD/RMB=${rates.USD_TO_RMB.toFixed(3)}
     
     ${isStressTest ? `
-    【⚠️ 严重警告：当前正处于极端压力测试模式！】
-    1. 融资未完成率设定为: ${riskParams.financingFailRate}% (意味着预计的新增贷款/发债有大幅落空的风险)。
-    2. 市场利率上浮: +${riskParams.interestRateAdd}% (意味着利息支出成本显著增加)。
-    请务必基于以上恶劣环境，严厉评估公司的资金链断裂风险。
-    ` : '当前处于标准预测模式。'}
+    【⚠️ 极端压力测试环境 ACTIVE】
+    - 外部融资失败率设定为: ${riskParams.financingFailRate}% (资金渠道严重受阻)
+    - 市场利率冲击: +${riskParams.interestRateAdd}% (利息成本飙升)
+    请以“底线思维”进行评估，假设最坏情况已经发生。
+    ` : '【标准预测模式】基于现有合同和常规预测。'}
 
-    数据如下（单位：亿元 ${baseCurrency}）：
+    【月度现金流数据 (亿元)】
     ${dataSummary}
 
-    请生成一份简报，包含以下四个部分（使用Markdown格式）：
-    
-    1.  **流动性预警**: 识别净现金流为负且金额较大的月份。
-    2.  **压力测试/风险评估**: ${isStressTest ? '重点分析在融资失败和利率飙升的双重打击下，哪些月份可能出现违约风险。' : '基于当前设定的汇率和现金流情况，评估资金链韧性。'}
-    3.  **应对策略**: ${isStressTest ? '在融资渠道受阻的情况下，建议如何出售资产或压缩开支以求生存。' : '针对资金缺口月份，建议融资方式。'}
-    4.  **总体评价**: 对未来18个月资金安全打分（1-10分）。${isStressTest ? '分数应严格反映压力环境下的脆弱性。' : ''}
+    请输出一段**高度浓缩**的决策参考（Markdown格式），包含以下三部分：
 
-    保持语气专业、客观、精炼。
+    ### 1. 💡 核心洞察 (Insight)
+    用一句话指出未来18个月最大的资金风险点或机会点（例如：“2024年Q3存在明显的流动性缺口，主要由XX引起...”）。
+
+    ### 2. 📊 关键指标预警 (Alerts)
+    列出净现金流为负且金额最大的2个具体的月份，并注明缺口金额。
+
+    ### 3. 🚀 建议行动 (Action Items)
+    给出3条具体的执行建议（例如：“建议立刻启动XX银团贷款置换”、“暂停XX项目支出”、“通过XX手段对冲汇率风险”）。
+    
+    *要求：不要废话，不要通用套话，只说针对数据的具体结论。*
   `;
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
-      config: { temperature: 0.2 }
+      config: { temperature: 0.3 }
     });
     
-    return response.text || "无法生成分析结果。";
+    return response.text || "AI 分析服务暂时无法响应。";
   } catch (error) {
     console.error("Gemini API Error:", error);
-    return "分析服务暂时繁忙，请稍后再试。";
+    return "连接 AI 服务超时，请检查网络或 API Key。";
   }
 };
