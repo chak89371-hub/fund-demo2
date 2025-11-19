@@ -5,16 +5,17 @@ import {
   Cell, PieChart, Pie, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, BarChart
 } from 'recharts';
 import { Transaction, Entity, ExchangeRates, TransactionCategory, Currency } from '../types';
-import { ShieldCheck, Activity, PieChart as PieIcon, DollarSign, TrendingUp, Layers, ArrowUpRight, ArrowDownRight, Filter, BarChart2 } from 'lucide-react';
+import { ShieldCheck, Activity, PieChart as PieIcon, DollarSign, TrendingUp, Layers, ArrowUpRight, ArrowDownRight, Filter, BarChart2, Landmark, ArrowDownLeft } from 'lucide-react';
 
 interface DashboardProps {
   transactions: Transaction[];
   rates: ExchangeRates;
   startBalances: Record<Entity, { HKD: number; RMB: number; USD: number }>;
   baseCurrency: Currency;
+  onOpenDebtModal?: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalances, baseCurrency }) => {
+const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalances, baseCurrency, onOpenDebtModal }) => {
   
   const [chartFilter, setChartFilter] = useState<'ALL' | Entity>('ALL');
 
@@ -77,11 +78,28 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
     return Object.values(dataMap);
   }, [transactions, rates, startBalances, baseCurrency, chartFilter]);
 
+  // STRICT 18-MONTH FILTER
+  const displayChartData = useMemo(() => {
+      const today = new Date();
+      const startStr = today.toISOString().substring(0, 7); // YYYY-MM
+      
+      const endDate = new Date(today);
+      endDate.setMonth(today.getMonth() + 18);
+      const endStr = endDate.toISOString().substring(0, 7);
+
+      return chartData.filter(d => d.month >= startStr && d.month <= endStr);
+  }, [chartData]);
+
+
   // --- KPI Calculations ---
-  const currentMonth = chartData[chartData.length - 1];
-  const totalLiquidity = currentMonth?.filteredBalance || 0;
-  const netFlow = (currentMonth?.net || 0);
+  const currentMonth = displayChartData[0]; // Use start of display period
+  const currentBalance = currentMonth?.filteredBalance || 0;
+  // Calculate actual current balance based on latest known data (last processed)
+  const latestKnownData = chartData[chartData.length - 1];
+  const latestBalance = latestKnownData?.filteredBalance || 0;
+
   const safetyThreshold = convertToBase(0, 100, 0);
+  const netFlow = currentMonth?.net || 0;
 
   // FX Data (Total Exposure)
   const fxData = useMemo(() => {
@@ -121,7 +139,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
 
   // Radar Data (Health Score)
   const radarData = [
-    { subject: '流动性', A: totalLiquidity > safetyThreshold ? 90 : 60, fullMark: 100 },
+    { subject: '流动性', A: latestBalance > safetyThreshold ? 90 : 60, fullMark: 100 },
     { subject: '偿债力', A: 80, fullMark: 100 },
     { subject: '融资空间', A: 70, fullMark: 100 },
     { subject: '汇率对冲', A: 50, fullMark: 100 },
@@ -134,20 +152,20 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
       {/* --- Row 1: Sparkline KPIs --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <SparklineCard 
-            title={chartFilter === 'ALL' ? '集团总资金余额' : `${chartFilter}资金余额`}
-            value={totalLiquidity} 
+            title={chartFilter === 'ALL' ? '集团总资金余额 (预测期末)' : `${chartFilter}资金余额`}
+            value={latestBalance} 
             unit={`亿 ${baseCurrency}`} 
-            data={chartData} 
+            data={displayChartData} 
             dataKey="filteredBalance" 
             color="#4f46e5" 
-            trend={totalLiquidity > safetyThreshold ? 'up' : 'down'}
+            trend={latestBalance > safetyThreshold ? 'up' : 'down'}
             subText={`安全阈值: ${safetyThreshold.toFixed(0)}`}
           />
           <SparklineCard 
             title="本月净流量" 
             value={netFlow} 
             unit="亿" 
-            data={chartData} 
+            data={displayChartData} 
             dataKey="net" 
             color={netFlow > 0 ? "#10b981" : "#f43f5e" } 
             type="bar"
@@ -212,17 +230,17 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="flex bg-slate-100 p-1 rounded-xl">
-                        <button onClick={() => setChartFilter('ALL')} className={`px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all ${chartFilter === 'ALL' ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>集团合并</button>
-                        <button onClick={() => setChartFilter(Entity.PROPERTY)} className={`px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all ${chartFilter === Entity.PROPERTY ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>地产</button>
-                        <button onClick={() => setChartFilter(Entity.ENTERPRISE)} className={`px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all ${chartFilter === Entity.ENTERPRISE ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>企业</button>
+                    <div className="flex bg-slate-100 p-1 rounded-xl overflow-hidden">
+                        <button onClick={() => setChartFilter('ALL')} className={`px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all ${chartFilter === 'ALL' ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>合并</button>
+                        <button onClick={() => setChartFilter(Entity.PROPERTY)} className={`px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all ${chartFilter === Entity.PROPERTY ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>地产</button>
+                        <button onClick={() => setChartFilter(Entity.ENTERPRISE)} className={`px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all ${chartFilter === Entity.ENTERPRISE ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>企业</button>
                     </div>
                 </div>
              </div>
              
              <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <AreaChart data={displayChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                         <defs>
                             <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.2}/>
@@ -252,19 +270,35 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, rates, startBalance
 
         {/* --- Debt Tower --- */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
-             <div className="flex items-center gap-3 mb-8">
-                <div className="p-2.5 bg-rose-50 rounded-xl text-rose-600 ring-1 ring-rose-100"><Layers size={20}/></div>
-                <div>
-                    <h3 className="font-bold text-slate-800 text-lg">债务偿还压力</h3>
-                    <p className="text-xs text-slate-400 font-medium">{chartFilter === 'ALL' ? '集团合并' : chartFilter} 季度分布 (Maturity)</p>
+             <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-rose-50 rounded-xl text-rose-600 ring-1 ring-rose-100"><Layers size={20}/></div>
+                    <div>
+                        <h3 className="font-bold text-slate-800 text-lg">债务偿还压力</h3>
+                        <p className="text-xs text-slate-400 font-medium">季度分布 (Maturity)</p>
+                    </div>
                 </div>
+                {onOpenDebtModal && (
+                     <button onClick={onOpenDebtModal} className="text-[10px] font-bold bg-rose-50 text-rose-600 px-2 py-1 rounded hover:bg-rose-100 transition-colors flex items-center gap-1">
+                        <Landmark size={12}/> 管理债务
+                     </button>
+                )}
              </div>
              
              <div className="flex-1 min-h-[250px]">
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={debtData} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
+                    <BarChart data={debtData} margin={{ top: 20, right: 0, left: -20, bottom: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="name" tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} interval={0} dy={10}/>
+                        <XAxis 
+                            dataKey="name" 
+                            tick={{fontSize: 10, fill: '#94a3b8'}} 
+                            axisLine={false} 
+                            tickLine={false} 
+                            interval={0} 
+                            angle={-45} 
+                            textAnchor="end" 
+                            height={60}
+                        />
                         <YAxis tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} dx={-10}/>
                         <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius:'12px', border:'none', boxShadow:'0 10px 15px -3px rgb(0 0 0 / 0.1)'}}/>
                         <Bar dataKey="rmb" name="RMB" stackId="a" fill="#f43f5e" radius={[0,0,4,4]} barSize={20} />
@@ -290,7 +324,7 @@ const SparklineCard = ({ title, value, unit, data, dataKey, color, type = 'area'
                 <h3 className="text-2xl font-bold text-slate-800 mt-2 tracking-tight">{typeof value === 'number' ? value.toFixed(1) : value} <span className="text-xs font-normal text-slate-400">{unit}</span></h3>
             </div>
             <div className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full ${trend === 'up' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                {trend === 'up' ? <ArrowUpRight size={12}/> : <ArrowDownRight size={12}/>}
+                {trend === 'up' ? <ArrowUpRight size={12}/> : <ArrowDownLeft size={12}/>}
                 {subText}
             </div>
         </div>
