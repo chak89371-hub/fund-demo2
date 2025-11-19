@@ -1,36 +1,30 @@
 
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-
-// --- CRASH HANDLER: Prevents "White Screen of Death" ---
-window.addEventListener('error', (event) => {
-  const rootElement = document.getElementById('root');
-  if (rootElement) {
-    rootElement.innerHTML = `
-      <div style="padding: 20px; font-family: sans-serif; color: #333;">
-        <h1 style="color: #e11d48;">⚠️ 应用程序崩溃 (Application Crash)</h1>
-        <p>很抱歉，系统遇到严重错误无法启动。以下是错误详情，请截图发给开发人员：</p>
-        <pre style="background: #f1f5f9; padding: 15px; border-radius: 8px; color: #0f172a; overflow: auto;">
-${event.message}
-Filename: ${event.filename}
-Line: ${event.lineno}, Column: ${event.colno}
-        </pre>
-        <p style="color: #64748b; font-size: 12px;">尝试解决方案：清除浏览器缓存或检查 API Key 环境变量配置。</p>
-      </div>
-    `;
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>企业资金计划管理系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Use system fonts for best performance in China */
+      body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"; }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
+    "react-markdown": "https://aistudiocdn.com/react-markdown@^10.1.0",
+    "recharts": "https://aistudiocdn.com/recharts@^3.4.1",
+    "uuid": "https://aistudiocdn.com/uuid@^13.0.0"
   }
-});
-// ------------------------------------------------------
-
-const rootElement = document.getElementById('root');
-if (!rootElement) {
-  throw new Error("Could not find root element to mount to");
 }
-
-const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
