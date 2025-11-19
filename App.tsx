@@ -43,33 +43,56 @@ const App: React.FC = () => {
 
   const [showSim, setShowSim] = useState(false);
 
-  // --- INITIAL DATA LOAD ---
+  // --- INITIAL DATA LOAD (With Safety Timeout) ---
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      if (isCloudEnabled) {
-        const cloudData = await fetchCloudTransactions();
-        if (cloudData && cloudData.length > 0) {
-          setManualTransactions(cloudData);
-          setSyncStatus('CONNECTED');
-        } else {
-          // Fallback to local initial data if DB is empty but connected, or just keep empty?
-          // Let's keep Initial Data for the demo feel if DB is empty
-          if (cloudData && cloudData.length === 0) {
-             // Optional: Seed DB? For now, just use Initial locally but mark as connected
-             setManualTransactions(INITIAL_TRANSACTIONS); 
-             // In a real app, we might not want to auto-seed, but for this demo:
-             setSyncStatus('CONNECTED');
-          } else {
+      
+      try {
+        // Define a timeout promise that rejects after 3 seconds
+        const timeoutPromise = new Promise<null>((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout')), 3000)
+        );
+
+        // If cloud is configured, race the fetch against the timeout
+        if (isCloudEnabled) {
+          try {
+            const cloudData = await Promise.race([
+              fetchCloudTransactions(),
+              timeoutPromise
+            ]);
+
+            if (cloudData && cloudData.length > 0) {
+              setManualTransactions(cloudData);
+              setSyncStatus('CONNECTED');
+            } else {
+              // Connected but empty DB, or explicit null returned
+              // For demo purposes, fall back to initial mock data but mark as connected if array was empty
+              if (cloudData && cloudData.length === 0) {
+                 setManualTransactions(INITIAL_TRANSACTIONS); 
+                 setSyncStatus('CONNECTED');
+              } else {
+                 // fetch returned null (error)
+                 setManualTransactions(INITIAL_TRANSACTIONS);
+                 setSyncStatus('LOCAL');
+              }
+            }
+          } catch (err) {
+             console.warn("Cloud connection timed out or failed, falling back to local.", err);
              setManualTransactions(INITIAL_TRANSACTIONS);
-             setSyncStatus('LOCAL'); // Failed to fetch
+             setSyncStatus('LOCAL');
           }
+        } else {
+          // No keys configured
+          setManualTransactions(INITIAL_TRANSACTIONS);
+          setSyncStatus('LOCAL');
         }
-      } else {
+      } catch (e) {
+        console.error("Critical initialization error:", e);
         setManualTransactions(INITIAL_TRANSACTIONS);
-        setSyncStatus('LOCAL');
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     loadData();
   }, []);
