@@ -6,8 +6,8 @@ import FundCalendar from './components/FundCalendar';
 import DebtModal from './components/DebtModal';
 import { Transaction, Entity, ExchangeRates, TransactionCategory, TransactionStatus, Currency, Debt, Benchmark, LoanType } from './types';
 import { INITIAL_TRANSACTIONS, INITIAL_BALANCES, DEFAULT_RATES, INITIAL_DEBTS } from './constants';
-import { fetchCloudTransactions, saveCloudTransaction, deleteCloudTransaction, isCloudEnabled } from './services/supabase';
-import { LayoutDashboard, Table2, Plus, Building2, ChevronRight, Download, Settings2, RefreshCw, RotateCcw, CalendarDays, X, TrendingUp, AlertTriangle, Landmark, Upload, Search, Filter, DollarSign, Menu, ArrowRightLeft, Cloud, CloudOff, Loader2 } from 'lucide-react';
+import { saveCloudTransaction, deleteCloudTransaction } from './services/supabase';
+import { LayoutDashboard, Table2, Plus, Building2, ChevronRight, Download, Settings2, RefreshCw, RotateCcw, CalendarDays, X, TrendingUp, AlertTriangle, Landmark, Upload, Search, Filter, DollarSign, Menu, ArrowRightLeft, CloudOff, Loader2, ShieldAlert, Zap, BarChart3 } from 'lucide-react';
 
 // Simple ID generator
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -17,9 +17,9 @@ const App: React.FC = () => {
   const [manualTransactions, setManualTransactions] = useState<Transaction[]>([]);
   const [debts, setDebts] = useState<Debt[]>(INITIAL_DEBTS);
   
-  // Cloud Sync State
+  // Cloud Sync State (Always Local for Stability)
   const [loading, setLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<'CONNECTED' | 'LOCAL'>('LOCAL');
+  const syncStatus = 'LOCAL';
 
   const [entityFilter, setEntityFilter] = useState<Entity | 'ALL'>('ALL');
   const [isTransModalOpen, setIsTransModalOpen] = useState(false);
@@ -41,15 +41,37 @@ const App: React.FC = () => {
   const [sofrShock, setSofrShock] = useState<number>(0); // bps
 
   const [showSim, setShowSim] = useState(false);
+  const [scenarioMode, setScenarioMode] = useState<'BASE' | 'OPTIMISTIC' | 'PESSIMISTIC'>('BASE');
 
   // --- INITIAL DATA LOAD ---
   useEffect(() => {
-    // Instant Local Load - No Network Waiting
     setManualTransactions(INITIAL_TRANSACTIONS);
-    setSyncStatus('LOCAL');
     setLoading(false);
   }, []);
 
+  // --- SCENARIO PRESETS ---
+  const applyScenario = (mode: 'BASE' | 'OPTIMISTIC' | 'PESSIMISTIC') => {
+    setScenarioMode(mode);
+    if (mode === 'BASE') {
+        setSimRates({ ...DEFAULT_RATES });
+        setFinancingFailRate(0);
+        setShiborShock(0);
+        setHiborShock(0);
+        setSofrShock(0);
+    } else if (mode === 'PESSIMISTIC') {
+        setSimRates({ HKD_TO_RMB: 0.85, USD_TO_RMB: 7.45 }); // RMB depreciates
+        setFinancingFailRate(30); // 30% financing fails
+        setShiborShock(50); // Rates up
+        setHiborShock(100);
+        setSofrShock(100);
+    } else if (mode === 'OPTIMISTIC') {
+        setSimRates({ HKD_TO_RMB: 0.95, USD_TO_RMB: 7.10 });
+        setFinancingFailRate(0);
+        setShiborShock(-20); // Rates down
+        setHiborShock(-20);
+        setSofrShock(-50);
+    }
+  };
 
   // --- DEBT ENGINE LOGIC ---
   const debtTransactions = useMemo(() => {
@@ -163,12 +185,7 @@ const App: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     if (confirm('确认删除此记录?')) {
-      // Optimistic Update
       setManualTransactions(prev => prev.filter(t => t.id !== id));
-      
-      if (syncStatus === 'CONNECTED') {
-          await deleteCloudTransaction(id);
-      }
     }
   };
 
@@ -193,17 +210,11 @@ const App: React.FC = () => {
         status: editingTrans.status!
     };
 
-    // Optimistic Update
     if (isEditMode) {
         setManualTransactions(prev => prev.map(t => t.id === transaction.id ? transaction : t));
     } else {
         setManualTransactions(prev => [...prev, transaction]);
     }
-
-    if (syncStatus === 'CONNECTED') {
-        await saveCloudTransaction(transaction);
-    }
-
     setIsTransModalOpen(false);
     setEditingTrans(defaultTransState);
     setIsEditMode(false);
@@ -228,14 +239,6 @@ const App: React.FC = () => {
           setDebts(prev => prev.filter(d => d.id !== id));
       }
   }
-
-  const resetSimulation = () => {
-      setSimRates({ ...DEFAULT_RATES });
-      setFinancingFailRate(0);
-      setShiborShock(0);
-      setHiborShock(0);
-      setSofrShock(0);
-  };
 
   const handleExportCSV = () => {
     const filteredData = entityFilter === 'ALL' 
@@ -270,7 +273,6 @@ const App: React.FC = () => {
     reader.onload = (event) => {
         const text = event.target?.result as string;
         if (!text) return;
-        
         try {
             const lines = text.split(/\r\n|\n/);
             const newTrans: Transaction[] = [];
@@ -295,11 +297,6 @@ const App: React.FC = () => {
             }
             if (newTrans.length > 0) {
                 setManualTransactions(prev => [...prev, ...newTrans]);
-                
-                if (syncStatus === 'CONNECTED') {
-                    newTrans.forEach(t => saveCloudTransaction(t));
-                }
-                
                 alert(`成功导入 ${newTrans.length} 条交易记录！`);
             } else {
                 alert("未能解析出有效数据，请检查CSV格式");
@@ -313,63 +310,52 @@ const App: React.FC = () => {
     e.target.value = '';
   };
 
-  const refreshData = async () => {
-     // No-op in local mode
-  };
-
   // Determine if we are in a non-standard scenario
-  const isStressTesting = financingFailRate > 0 || Math.abs(shiborShock) > 0 || Math.abs(hiborShock) > 0 || Math.abs(sofrShock) > 0;
+  const isStressTesting = scenarioMode === 'PESSIMISTIC';
 
   if (loading) {
       return (
           <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0f172a] text-white">
               <Loader2 size={48} className="animate-spin text-indigo-500 mb-4"/>
               <h2 className="text-xl font-bold">正在初始化系统...</h2>
-              <p className="text-slate-400 text-sm mt-2">System Initializing</p>
           </div>
       )
   }
 
   return (
-    <div className="flex h-screen bg-[#f1f5f9] font-sans overflow-hidden text-slate-900">
+    <div className="flex h-screen bg-slate-50 font-sans overflow-hidden text-slate-900">
       
       {/* Mobile Sidebar Overlay */}
       <div className={`fixed inset-0 bg-slate-900/50 z-40 transition-opacity md:hidden ${mobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setMobileMenuOpen(false)}></div>
 
       {/* Sidebar */}
       <div className={`
-        fixed md:static inset-y-0 left-0 z-50 w-72 bg-[#0f172a] flex flex-col transition-transform duration-300 shadow-2xl
+        fixed md:static inset-y-0 left-0 z-50 w-72 bg-slate-900 text-slate-300 flex flex-col transition-transform duration-300 shadow-2xl border-r border-white/5
         ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         ${!sidebarOpen && 'md:w-20'}
       `}>
         {/* Sidebar Content */}
-        <div className="h-20 flex items-center px-5 relative z-10 border-b border-slate-800/50 bg-[#0f172a]">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl text-white flex items-center justify-center shadow-lg shadow-indigo-500/30 flex-shrink-0">
-                <Building2 size={22} />
+        <div className="h-16 flex items-center px-5 relative z-10 border-b border-white/10 bg-slate-900">
+            <div className="w-9 h-9 bg-indigo-600 rounded-lg text-white flex items-center justify-center shadow-lg shadow-indigo-500/30 flex-shrink-0">
+                <Building2 size={20} />
             </div>
             {sidebarOpen && (
-                <div className="ml-4 whitespace-nowrap">
-                    <h1 className="text-white font-bold text-lg">集团资金通</h1>
-                    <div className="flex items-center gap-2 mt-0.5">
-                         <div className={`w-1.5 h-1.5 rounded-full ${syncStatus === 'CONNECTED' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></div>
-                         <p className="text-[10px] text-slate-400 font-medium uppercase">
-                             {syncStatus === 'CONNECTED' ? 'Cloud Synced' : 'Local Demo Mode'}
-                         </p>
-                    </div>
+                <div className="ml-3 whitespace-nowrap overflow-hidden">
+                    <h1 className="text-white font-bold text-lg tracking-tight">集团资金通</h1>
                 </div>
             )}
         </div>
 
-        <div className="flex-1 py-8 space-y-1 px-3 overflow-y-auto bg-[#0f172a]">
+        <div className="flex-1 py-6 space-y-1 px-3 overflow-y-auto bg-slate-900">
             <NavButton active={activeTab === 'DASHBOARD'} onClick={() => { setActiveTab('DASHBOARD'); setMobileMenuOpen(false); }} icon={<LayoutDashboard size={20} />} label="全景驾驶舱" open={sidebarOpen} />
-            <NavButton active={activeTab === 'CALENDAR'} onClick={() => { setActiveTab('CALENDAR'); setMobileMenuOpen(false); }} icon={<CalendarDays size={20} />} label="资金日历" open={sidebarOpen} />
+            <NavButton active={activeTab === 'CALENDAR'} onClick={() => { setActiveTab('CALENDAR'); setMobileMenuOpen(false); }} icon={<CalendarDays size={20} />} label="资金运作日历" open={sidebarOpen} />
             <NavButton active={activeTab === 'TRANSACTIONS'} onClick={() => { setActiveTab('TRANSACTIONS'); setMobileMenuOpen(false); }} icon={<Table2 size={20} />} label="交易明细账" open={sidebarOpen} />
 
-            <div className="my-6 border-t border-slate-800/50 mx-2"></div>
+            <div className="my-6 border-t border-white/10 mx-2"></div>
              
              <button 
                 onClick={() => { setIsDebtModalOpen(true); setMobileMenuOpen(false); }}
-                className={`w-full flex items-center p-3 rounded-xl transition-all duration-200 group text-slate-400 hover:bg-slate-800/80 hover:text-white`}
+                className={`w-full flex items-center p-3 rounded-xl transition-all duration-200 group text-slate-400 hover:bg-white/5 hover:text-white`}
             >
                 <div className="text-indigo-400"><Landmark size={20} /></div>
                 {sidebarOpen && <span className="ml-3 font-medium text-sm">债务融资台账</span>}
@@ -377,7 +363,7 @@ const App: React.FC = () => {
 
              <button 
                 onClick={() => { setShowSim(!showSim); setMobileMenuOpen(false); }}
-                className={`w-full flex items-center p-3 rounded-xl transition-all duration-200 group mt-1 ${showSim ? 'bg-amber-950/30 text-amber-400 border border-amber-500/20' : 'text-slate-400 hover:bg-slate-800/80 hover:text-white'}`}
+                className={`w-full flex items-center p-3 rounded-xl transition-all duration-200 group mt-1 ${showSim ? 'bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/30' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
             >
                 <div className={`transition-transform duration-300 ${showSim ? 'rotate-90' : ''}`}>
                     <Settings2 size={20} />
@@ -386,45 +372,45 @@ const App: React.FC = () => {
             </button>
         </div>
 
-        <div className="p-4 border-t border-slate-800/50 hidden md:block bg-[#0f172a]">
-             <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-slate-800 rounded-xl w-full flex justify-center text-slate-500 transition-colors">
+        <div className="p-4 border-t border-white/10 hidden md:block bg-slate-900">
+             <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-white/5 rounded-xl w-full flex justify-center text-slate-500 transition-colors">
                 {sidebarOpen ? <ChevronRight className="rotate-180"/> : <ChevronRight />}
              </button>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden relative bg-[#f8fafc]">
+      <div className="flex-1 flex flex-col h-screen overflow-hidden relative bg-slate-50/50">
         
         {/* Top Bar */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-8 z-20 flex-shrink-0 sticky top-0 shadow-sm">
+        <header className="h-16 bg-white/80 backdrop-blur-md border-b border-slate-200/60 flex items-center justify-between px-4 md:px-8 z-20 flex-shrink-0 sticky top-0">
             <div className="flex items-center gap-4">
                 <button onClick={() => setMobileMenuOpen(true)} className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg">
                     <Menu size={24} />
                 </button>
                 <h2 className="text-lg font-bold text-slate-800 tracking-tight flex items-center gap-2 truncate">
-                    {activeTab === 'DASHBOARD' && <><LayoutDashboard size={20} className="text-indigo-600 hidden sm:block"/> 资金全景驾驶舱</>}
+                    {activeTab === 'DASHBOARD' && <><BarChart3 size={20} className="text-indigo-600 hidden sm:block"/> 资金全景驾驶舱</>}
                     {activeTab === 'CALENDAR' && <><CalendarDays size={20} className="text-indigo-600 hidden sm:block"/> 资金运作日历</>}
                     {activeTab === 'TRANSACTIONS' && <><Table2 size={20} className="text-indigo-600 hidden sm:block"/> 交易明细台账</>}
                 </h2>
             </div>
 
-            <div className="flex items-center gap-3 md:gap-6">
+            <div className="flex items-center gap-3 md:gap-4">
                 
-                {/* Sync Status Indicator */}
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200">
-                    <div className="flex items-center gap-1.5 text-slate-400">
-                        <CloudOff size={14} />
-                        <span className="text-[10px] font-bold">本地演示模式</span>
+                {/* Scenario Badge */}
+                {scenarioMode !== 'BASE' && (
+                    <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ring-1 ring-inset ${scenarioMode === 'OPTIMISTIC' ? 'bg-emerald-50 text-emerald-600 ring-emerald-200' : 'bg-rose-50 text-rose-600 ring-rose-200'}`}>
+                        {scenarioMode === 'OPTIMISTIC' ? <Zap size={12}/> : <ShieldAlert size={12}/>}
+                        {scenarioMode === 'OPTIMISTIC' ? '乐观预设' : '压力测试'}
                     </div>
-                </div>
+                )}
 
-                <div className="hidden md:flex bg-slate-100/80 p-1 rounded-lg border border-slate-200/50">
+                <div className="hidden md:flex bg-slate-100 p-1 rounded-lg border border-slate-200">
                     {Object.values(Currency).map((c) => (
                         <button
                             key={c}
                             onClick={() => setBaseCurrency(c)}
-                            className={`px-4 py-1 text-xs font-bold rounded-md transition-all shadow-sm ${baseCurrency === c ? 'bg-white text-indigo-700 shadow ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}
+                            className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${baseCurrency === c ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                         >
                             {c}
                         </button>
@@ -432,7 +418,7 @@ const App: React.FC = () => {
                 </div>
                 <button 
                     onClick={handleOpenAddTrans}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 md:px-4 md:py-2.5 rounded-lg text-sm font-bold shadow-lg shadow-indigo-600/20 flex items-center gap-2 active:scale-95"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 md:px-4 md:py-2 rounded-lg text-sm font-bold shadow-lg shadow-indigo-600/20 flex items-center gap-2 active:scale-95 transition-all"
                 >
                     <Plus size={18} />
                     <span className="hidden md:inline">新增事项</span>
@@ -442,7 +428,7 @@ const App: React.FC = () => {
 
         {/* RISK SANDBOX (Collapsible) */}
         <div className={`bg-slate-900 text-white overflow-hidden transition-all duration-500 ease-in-out shadow-inner border-b border-slate-800 ${showSim ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
-            <div className="p-6 md:p-8 bg-gradient-to-b from-slate-900 to-slate-950 overflow-y-auto max-h-[600px]">
+            <div className="p-6 md:p-8 bg-gradient-to-b from-slate-900 to-slate-950">
                 <div className="max-w-[1400px] mx-auto">
                      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                          <div className="flex items-center gap-3">
@@ -450,38 +436,39 @@ const App: React.FC = () => {
                                 <RefreshCw size={18} />
                             </div>
                             <div>
-                                <h3 className="font-bold text-base text-white tracking-wide">资金压力测试沙箱 (Risk Sandbox)</h3>
-                                <p className="text-xs text-slate-400">模拟极端市场环境下的资金链韧性</p>
+                                <h3 className="font-bold text-base text-white tracking-wide">资金压力测试沙箱</h3>
+                                <p className="text-xs text-slate-400">通过调整参数模拟极端环境，或使用一键预设。</p>
                             </div>
                         </div>
-                        <button 
-                            onClick={resetSimulation} 
-                            className="text-xs flex items-center gap-2 text-slate-300 hover:text-white transition-colors px-4 py-2 rounded-lg border border-slate-700 hover:bg-slate-800 w-fit"
-                        >
-                            <RotateCcw size={14} /> 重置参数
-                        </button>
+                        
+                        {/* Quick Scenario Switcher */}
+                        <div className="flex bg-white/10 p-1 rounded-lg border border-white/10">
+                             <button onClick={() => applyScenario('OPTIMISTIC')} className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${scenarioMode === 'OPTIMISTIC' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>乐观预设</button>
+                             <button onClick={() => applyScenario('BASE')} className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${scenarioMode === 'BASE' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>基准情形</button>
+                             <button onClick={() => applyScenario('PESSIMISTIC')} className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${scenarioMode === 'PESSIMISTIC' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>压力测试</button>
+                        </div>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                         {/* Exchange Rates */}
-                        <div className="space-y-5 md:border-r border-slate-800 md:pr-8">
-                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">FX 汇率波动</p>
+                        <div className="space-y-5 md:border-r border-white/10 md:pr-8">
+                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">汇率波动模拟</p>
                             <div className="space-y-6">
-                                <RangeInput label="HKD/RMB" val={simRates.HKD_TO_RMB} min={0.8} max={1.1} step={0.005} format={(v: number) => v.toFixed(3)} onChange={(v: number) => setSimRates(p => ({...p, HKD_TO_RMB: v}))} />
-                                <RangeInput label="USD/RMB" val={simRates.USD_TO_RMB} min={6.5} max={8.0} step={0.005} format={(v: number) => v.toFixed(3)} onChange={(v: number) => setSimRates(p => ({...p, USD_TO_RMB: v}))} />
+                                <RangeInput label="HKD/RMB" val={simRates.HKD_TO_RMB} min={0.8} max={1.1} step={0.005} format={(v: number) => v.toFixed(3)} onChange={(v: number) => { setSimRates(p => ({...p, HKD_TO_RMB: v})); setScenarioMode('BASE'); }} />
+                                <RangeInput label="USD/RMB" val={simRates.USD_TO_RMB} min={6.5} max={8.0} step={0.005} format={(v: number) => v.toFixed(3)} onChange={(v: number) => { setSimRates(p => ({...p, USD_TO_RMB: v})); setScenarioMode('BASE'); }} />
                             </div>
                         </div>
 
                         {/* Interest Rate Shock (Granular) */}
-                        <div className="space-y-5 lg:col-span-2 md:px-4 md:border-r border-slate-800">
+                        <div className="space-y-5 lg:col-span-2 md:px-4 md:border-r border-white/10">
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
                                 <ArrowRightLeft size={12} className="text-rose-400"/> 
-                                市场利率浮动 (Interest Rate Fluctuation)
+                                市场利率浮动 (Basis Points)
                             </p>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                                <RangeInput label="SHIBOR 浮动" val={shiborShock} min={-200} max={200} step={10} format={(v: number) => `${v > 0 ? '+' : ''}${v} bps`} onChange={setShiborShock} color={shiborShock > 0 ? "accent-rose-500" : "accent-emerald-500"}/>
-                                <RangeInput label="HIBOR 浮动" val={hiborShock} min={-200} max={200} step={10} format={(v: number) => `${v > 0 ? '+' : ''}${v} bps`} onChange={setHiborShock} color={hiborShock > 0 ? "accent-rose-500" : "accent-emerald-500"}/>
-                                <RangeInput label="SOFR 浮动" val={sofrShock} min={-200} max={200} step={10} format={(v: number) => `${v > 0 ? '+' : ''}${v} bps`} onChange={setSofrShock} color={sofrShock > 0 ? "accent-rose-500" : "accent-emerald-500"}/>
+                                <RangeInput label="SHIBOR" val={shiborShock} min={-200} max={200} step={10} format={(v: number) => `${v > 0 ? '+' : ''}${v} bps`} onChange={(v:number) => { setShiborShock(v); setScenarioMode('BASE'); }} color={shiborShock > 0 ? "accent-rose-500" : "accent-emerald-500"}/>
+                                <RangeInput label="HIBOR" val={hiborShock} min={-200} max={200} step={10} format={(v: number) => `${v > 0 ? '+' : ''}${v} bps`} onChange={(v:number) => { setHiborShock(v); setScenarioMode('BASE'); }} color={hiborShock > 0 ? "accent-rose-500" : "accent-emerald-500"}/>
+                                <RangeInput label="SOFR" val={sofrShock} min={-200} max={200} step={10} format={(v: number) => `${v > 0 ? '+' : ''}${v} bps`} onChange={(v:number) => { setSofrShock(v); setScenarioMode('BASE'); }} color={sofrShock > 0 ? "accent-rose-500" : "accent-emerald-500"}/>
                             </div>
                         </div>
 
@@ -491,13 +478,7 @@ const App: React.FC = () => {
                                 <AlertTriangle size={12} className="text-amber-400"/> 
                                 融资落地风险
                             </p>
-                            <RangeInput label="融资未完成率" val={financingFailRate} min={0} max={100} step={5} format={(v: number) => `${v}%`} onChange={setFinancingFailRate} color="accent-amber-500"/>
-                            
-                            <div className={`mt-6 flex items-center justify-center p-3 rounded-xl border ${isStressTesting ? 'bg-rose-500/10 border-rose-500/30 text-rose-200' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'}`}>
-                                <span className="text-xs font-bold">
-                                    {isStressTesting ? '⚠️ 压力环境 ACTIVE' : '✅ 标准环境 ACTIVE'}
-                                </span>
-                            </div>
+                            <RangeInput label="融资失败率" val={financingFailRate} min={0} max={100} step={5} format={(v: number) => `${v}%`} onChange={(v:number) => { setFinancingFailRate(v); setScenarioMode('BASE'); }} color="accent-amber-500"/>
                         </div>
                     </div>
                 </div>
@@ -509,7 +490,7 @@ const App: React.FC = () => {
             <div className="max-w-[1600px] mx-auto space-y-8 pb-20">
                 
                 {activeTab === 'DASHBOARD' && (
-                    <div className="space-y-8">
+                    <div className="space-y-8 animate-in fade-in duration-500 slide-in-from-bottom-4">
                         <Dashboard 
                             transactions={allTransactions} 
                             rates={simRates} 
@@ -530,7 +511,7 @@ const App: React.FC = () => {
                 )}
 
                 {activeTab === 'TRANSACTIONS' && (
-                    <div className="space-y-6">
+                    <div className="space-y-6 animate-in fade-in duration-500 slide-in-from-bottom-4">
                             <div className="flex flex-col xl:flex-row xl:items-center justify-between bg-white p-4 rounded-2xl border border-slate-200 shadow-sm gap-4">
                             <div className="flex items-center gap-4 overflow-x-auto pb-1 xl:pb-0">
                                 <div className="flex items-center gap-2 text-sm font-bold text-slate-700 whitespace-nowrap px-2">
@@ -655,7 +636,7 @@ const App: React.FC = () => {
 const NavButton = ({ active, onClick, icon, label, open }: any) => (
     <button 
         onClick={onClick}
-        className={`w-full flex items-center p-3.5 rounded-xl transition-all duration-200 group relative ${active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40' : 'text-slate-400 hover:bg-slate-800/80 hover:text-white'}`}
+        className={`w-full flex items-center p-3.5 rounded-xl transition-all duration-200 group relative ${active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
     >
         <span className="relative z-10">{icon}</span>
         {open && <span className="ml-3 font-medium text-sm relative z-10 tracking-wide">{label}</span>}
