@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import FinancialTable from './components/FinancialTable';
 import Dashboard from './components/Dashboard';
@@ -42,58 +41,47 @@ const App: React.FC = () => {
 
   const [showSim, setShowSim] = useState(false);
 
-  // --- INITIAL DATA LOAD (With Safety Timeout) ---
+  // --- INITIAL DATA LOAD ---
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      
+    let mounted = true;
+
+    const init = async () => {
+      // If no cloud config, immediately load local and stop loading
+      if (!isCloudEnabled) {
+        if (mounted) {
+            setManualTransactions(INITIAL_TRANSACTIONS);
+            setSyncStatus('LOCAL');
+            setLoading(false);
+        }
+        return;
+      }
+
+      // If cloud is enabled, try to fetch with a short timeout
       try {
-        // 1. Create a "Soft Timeout" promise
-        // Instead of rejecting (which causes error overlays), we resolve to null gracefully.
-        const timeoutPromise = new Promise<Transaction[] | null>((resolve) => 
-          setTimeout(() => {
-            console.warn("Cloud DB connection timed out (likely cold start). Falling back to local.");
-            resolve(null);
-          }, 5000) // Increased to 5 seconds for cold starts
-        );
-
-        // 2. Race the actual fetch against the timeout
-        if (isCloudEnabled) {
-            const cloudData = await Promise.race([
-              fetchCloudTransactions(),
-              timeoutPromise
-            ]);
-
-            if (cloudData && cloudData.length > 0) {
-              setManualTransactions(cloudData);
-              setSyncStatus('CONNECTED');
+        const cloudData = await fetchCloudTransactions();
+        if (mounted) {
+            if (cloudData) {
+                setManualTransactions(cloudData.length > 0 ? cloudData : INITIAL_TRANSACTIONS);
+                setSyncStatus('CONNECTED');
             } else {
-              // Either null (timeout/error) or empty array (new DB)
-              // If it was a timeout (null), we default to local.
-              // If it was empty array, we technically connected, but have no data.
-              // For this demo, let's load mock data if empty, but mark connected.
-              if (cloudData && cloudData.length === 0) {
-                 setManualTransactions(INITIAL_TRANSACTIONS); 
-                 setSyncStatus('CONNECTED');
-              } else {
-                 // Null result = Timeout or Error
-                 setManualTransactions(INITIAL_TRANSACTIONS);
-                 setSyncStatus('LOCAL');
-              }
+                // Fetch failed (returns null), fallback to local
+                setManualTransactions(INITIAL_TRANSACTIONS);
+                setSyncStatus('LOCAL');
             }
-        } else {
-          // No keys configured
-          setManualTransactions(INITIAL_TRANSACTIONS);
-          setSyncStatus('LOCAL');
         }
       } catch (e) {
-        console.error("Initialization error:", e);
-        setManualTransactions(INITIAL_TRANSACTIONS);
+          if (mounted) {
+            setManualTransactions(INITIAL_TRANSACTIONS);
+            setSyncStatus('LOCAL');
+          }
       } finally {
-        setLoading(false);
+          if (mounted) setLoading(false);
       }
     };
-    loadData();
+
+    init();
+
+    return () => { mounted = false; };
   }, []);
 
 
@@ -370,12 +358,12 @@ const App: React.FC = () => {
   // Determine if we are in a non-standard scenario
   const isStressTesting = financingFailRate > 0 || Math.abs(shiborShock) > 0 || Math.abs(hiborShock) > 0 || Math.abs(sofrShock) > 0;
 
-  if (loading && manualTransactions.length === 0) {
+  if (loading) {
       return (
           <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0f172a] text-white">
               <Loader2 size={48} className="animate-spin text-indigo-500 mb-4"/>
-              <h2 className="text-xl font-bold">正在连接加密资金数据库...</h2>
-              <p className="text-slate-400 text-sm mt-2">Connecting to Secure Cloud Environment</p>
+              <h2 className="text-xl font-bold">正在初始化系统...</h2>
+              <p className="text-slate-400 text-sm mt-2">System Initializing</p>
           </div>
       )
   }
