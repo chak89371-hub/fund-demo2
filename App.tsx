@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import FinancialTable from './components/FinancialTable';
 import Dashboard from './components/Dashboard';
@@ -43,45 +44,10 @@ const App: React.FC = () => {
 
   // --- INITIAL DATA LOAD ---
   useEffect(() => {
-    let mounted = true;
-
-    const init = async () => {
-      // If no cloud config, immediately load local and stop loading
-      if (!isCloudEnabled) {
-        if (mounted) {
-            setManualTransactions(INITIAL_TRANSACTIONS);
-            setSyncStatus('LOCAL');
-            setLoading(false);
-        }
-        return;
-      }
-
-      // If cloud is enabled, try to fetch with a short timeout
-      try {
-        const cloudData = await fetchCloudTransactions();
-        if (mounted) {
-            if (cloudData) {
-                setManualTransactions(cloudData.length > 0 ? cloudData : INITIAL_TRANSACTIONS);
-                setSyncStatus('CONNECTED');
-            } else {
-                // Fetch failed (returns null), fallback to local
-                setManualTransactions(INITIAL_TRANSACTIONS);
-                setSyncStatus('LOCAL');
-            }
-        }
-      } catch (e) {
-          if (mounted) {
-            setManualTransactions(INITIAL_TRANSACTIONS);
-            setSyncStatus('LOCAL');
-          }
-      } finally {
-          if (mounted) setLoading(false);
-      }
-    };
-
-    init();
-
-    return () => { mounted = false; };
+    // Instant Local Load - No Network Waiting
+    setManualTransactions(INITIAL_TRANSACTIONS);
+    setSyncStatus('LOCAL');
+    setLoading(false);
   }, []);
 
 
@@ -348,11 +314,7 @@ const App: React.FC = () => {
   };
 
   const refreshData = async () => {
-      if (syncStatus !== 'CONNECTED') return;
-      setLoading(true);
-      const cloudData = await fetchCloudTransactions();
-      if (cloudData) setManualTransactions(cloudData);
-      setLoading(false);
+     // No-op in local mode
   };
 
   // Determine if we are in a non-standard scenario
@@ -451,20 +413,10 @@ const App: React.FC = () => {
                 
                 {/* Sync Status Indicator */}
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200">
-                    {syncStatus === 'CONNECTED' ? (
-                        <div className="flex items-center gap-1.5 text-emerald-600">
-                            <Cloud size={14} />
-                            <span className="text-[10px] font-bold">云端已连接</span>
-                            <button onClick={refreshData} className="ml-1 hover:text-emerald-800" title="刷新数据">
-                                <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-                            </button>
-                        </div>
-                    ) : (
-                         <div className="flex items-center gap-1.5 text-slate-400">
-                            <CloudOff size={14} />
-                            <span className="text-[10px] font-bold">本地演示模式</span>
-                        </div>
-                    )}
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                        <CloudOff size={14} />
+                        <span className="text-[10px] font-bold">本地演示模式</span>
+                    </div>
                 </div>
 
                 <div className="hidden md:flex bg-slate-100/80 p-1 rounded-lg border border-slate-200/50">
